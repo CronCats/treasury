@@ -11,9 +11,11 @@ use near_sdk::{
 };
 
 mod owner;
-mod storage_impl;
 mod utils;
 mod views;
+mod storage_impl;
+mod ft_impl;
+mod nft_impl;
 
 near_sdk::setup_alloc!();
 
@@ -27,10 +29,6 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 // #[derive(BorshStorageKey, BorshSerialize)]
 // pub enum StorageKeys {
 //     Tasks,
-//     Agents,
-//     Slots,
-//     AgentsActive,
-//     AgentsPending,
 // }
 
 #[near_bindgen]
@@ -38,20 +36,43 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 pub struct Contract {
     // Runtime
     paused: bool,
-    owner_id: AccountId,
+    owner_id: AccountId, // single or DAO entity
+    approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
+    signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
+
+    // Collateral Pools (NOTE: Serious WIP here :D )
+    ft_accounts: UnorderedSet<AccountId>,
+    ft_balances: UnorderedMap<AccountId, u128>,
+    nft_accounts: UnorderedSet<AccountId>,
+    nft_holdings: UnorderedMap<AccountId, Vector<u128>>,
+
+    // Staking
+    stake_threshold_percentage: u128,
+    stake_eval_period: u128, // Decide on time delay, in seconds
+    stake_eval_cadence: String, // OR cron cadence
+    stake_pools: UnorderedMap<AccountId, u128>, // for near staking, can be metapool, or other pools directly
+    stake_pending_pools: UnorderedMap<AccountId, u128>, // for withdraw near staking
+    stake_ft: UnorderedMap<AccountId, u128>, // for yield farming
+    stake_pending_ft: UnorderedMap<AccountId, u128>, // for withdraw yield farming
+
+    // Collateral Adapters
+    // TODO: Figure out how these can become more like plugins for others to extend
+    dex_approved_accounts: UnorderedSet<AccountId>, // set accounts that are approved for making swaps
+    dex_approved_ft: UnorderedSet<AccountId>, // set the tokens that are approved for making swaps
 
     // Storage
-    // agent_storage_usage: StorageUsage,
+    // ft_storage_usage: StorageUsage,
+    // nft_storage_usage: StorageUsage,
 }
 
 #[near_bindgen]
-impl Contract {
+impl Treasury {
     /// ```bash
     /// near call cron.testnet new --accountId cron.testnet
     /// ```
     #[init]
     pub fn new() -> Self {
-        let mut this = Contract {
+        let mut this = Treasury {
             paused: false,
             owner_id: env::signer_account_id(),
         };
