@@ -5,8 +5,12 @@ pub const GAS_STAKE_UNSTAKE: Gas = 10_000_000_000_000;
 pub const GAS_STAKE_WITHDRAW_ALL: Gas = 10_000_000_000_000;
 pub const GAS_STAKE_GET_STAKE_BALANCE: Gas = 10_000_000_000_000;
 pub const GAS_STAKE_GET_STAKE_BALANCE_CALLBACK: Gas = 10_000_000_000_000;
+pub const GAS_STAKE_LIQUID_UNSTAKE_VIEW: Gas = 10_000_000_000_000;
+pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = 10_000_000_000_000;
+pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = 10_000_000_000_000;
+pub const GAS_YIELD_HARVEST: Gas = 10_000_000_000_000;
 
-#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct PoolBalance {
     pub account_id: AccountId,
@@ -15,12 +19,31 @@ pub struct PoolBalance {
     pub can_withdraw: bool,
 }
 
-#[derive(Serialize)]
+/// REF: https://github.com/Narwallets/meta-pool/blob/master/metapool/src/types.rs#L117
+#[derive(Deserialize)]
 #[serde(crate = "near_sdk::serde")]
-pub struct LiquidUnstakeResult {
-    pub near: U128String,
-    pub fee: U128String,
-    pub meta: U128String,
+pub struct MetaPoolBalance {
+    pub account_id: AccountId,
+    pub available: U128,
+
+    pub st_near: U128,
+    pub valued_st_near: U128, // st_near * stNEAR_price
+
+    pub meta: U128,
+    pub realized_meta: U128,
+    pub unstaked: U128,
+    pub unstaked_requested_unlock_epoch: U64,
+    pub unstake_full_epochs_wait_left: u16,
+    pub can_withdraw: bool,
+    pub total: U128,
+    pub trip_start: U64,
+    pub trip_start_stnear: U128,
+    pub trip_accum_stakes: U128,
+    pub trip_accum_unstakes: U128,
+    pub trip_rewards: U128,
+    pub nslp_shares: U128,
+    pub nslp_share_value: U128,
+    pub nslp_share_bp: u16,
 }
 
 #[near_bindgen]
@@ -33,6 +56,8 @@ impl Contract {
     pub fn add_staking_pool(
         &mut self,
         pool_account_id: AccountId,
+        // So if a pool has harvesting abilities, you can provide here. Examples: MetaPool: harvest_meta, CheddarFarm: withdraw_crop
+        yield_function: Option<String>,
     ) {
         assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
         let current_pool = self.stake_pools.get(&pool_account_id);
@@ -41,6 +66,10 @@ impl Contract {
         // NOTE: Only managing the stake_pools, as stake_pending_pools is used for active balance movements
         assert!(current_pool.is_none(), "Stake pool exists already");
         self.stake_pools.insert(&pool_account_id, &0);
+
+        if let Some(yield_function) = yield_function {
+            self.yield_functions.insert(&pool_account_id, &yield_function);
+        }
     }
 
     /// Remove a pool, if all balances have been withdrawn
@@ -60,6 +89,7 @@ impl Contract {
         assert!(current_pool.is_some(), "Stake pool doesnt exist");
         assert_eq!(current_pool.unwrap(), 0, "Stake pool has a balance");
         self.stake_pools.remove(&pool_account_id);
+        self.yield_functions.remove(&pool_account_id);
     }
 
     /// Send NEAR to a staking pool and stake.
@@ -183,7 +213,7 @@ impl Contract {
     /// Get the staked balance from a pool for THIS account
     /// 
     /// ```bash
-    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
     pub fn get_staked_balance(
         &mut self,
@@ -191,12 +221,12 @@ impl Contract {
     ) {
         assert!(self.stake_pools.get(&pool_account_id).is_some(), "Pool doesnt exist");
 
-        // Lastly, make the cross-contract call to get the balance
+        // make the cross-contract call to get the balance
         let p1 = env::promise_create(
             pool_account_id.clone(),
             b"get_account",
             json!({
-                "account": env::current_account_id(),
+                "account_id": env::current_account_id(),
             }).to_string().as_bytes(),
             NO_DEPOSIT,
             GAS_STAKE_GET_STAKE_BALANCE
@@ -245,6 +275,125 @@ impl Contract {
         }
     }
 
-    // TODO: Harvest ("harvest_meta", 1 yocto)
-    // TODO: Liquid unstake ("liquid_unstake", Figure out: {"st_near_to_burn": "NEAR","min_expected_near": "NEAR"} (NOTE: Used 2% fee. Might need to get the current fee?))
+    /// Execute a yield harvest for staking pools that support it.
+    /// 
+    /// ```bash
+    /// near call treasury.testnet yield_harvest '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// ```
+    pub fn yield_harvest(
+        &mut self,
+        pool_account_id: AccountId,
+    ) {
+        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
+        assert!(self.stake_pending_pools.get(&pool_account_id).is_some(), "Stake pool doesnt exist");
+        let yield_function = self.yield_functions.get(&pool_account_id).expect("Yield function doesnt exist");
+
+        // Make a yield harvest call, including yocto since most include FT that needs txns with priveledges
+        let p = env::promise_create(
+            pool_account_id,
+            yield_function.as_bytes(),
+            json!({}).to_string().as_bytes(),
+            ONE_YOCTO,
+            GAS_YIELD_HARVEST
+        );
+
+        env::promise_return(p);
+    }
+
+    /// Unstake any liquid staked near tokens for NEAR. Useful for situations that require immediate access to NEAR.
+    /// 
+    /// ```bash
+    /// near call treasury.testnet liquid_unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
+    /// ```
+    pub fn liquid_unstake(
+        &mut self,
+        pool_account_id: AccountId,
+        amount: Option<Balance>,
+    ) {
+        assert!(self.stake_pools.get(&pool_account_id).is_some(), "Pool doesnt exist");
+
+        // First check if there are any staked balances
+        let p1 = env::promise_create(
+            pool_account_id.clone(),
+            b"get_account_info",
+            json!({
+                "account_id": env::current_account_id(),
+            }).to_string().as_bytes(),
+            NO_DEPOSIT,
+            GAS_STAKE_LIQUID_UNSTAKE_VIEW
+        );
+
+        let p2 = env::promise_then(
+            p1,
+            env::current_account_id(),
+            b"callback_liquid_unstake",
+            json!({
+                "pool_account_id": pool_account_id,
+                "amount": amount,
+            }).to_string().as_bytes(),
+            NO_DEPOSIT,
+            GAS_STAKE_LIQUID_UNSTAKE_CALLBACK
+        );
+
+        env::promise_return(p2);
+    }
+
+    /// CALLBACK for get_staked_balance
+    #[private]
+    pub fn callback_liquid_unstake(
+        &mut self,
+        pool_account_id: AccountId,
+        amount: Option<Balance>,
+    ) {
+        assert_eq!(env::promise_results_count(), 1, "Expected 1 promise result.");
+
+        // Return balance or 0
+        match env::promise_result(0) {
+            PromiseResult::NotReady => {
+                unreachable!()
+            }
+            PromiseResult::Successful(result) => {
+                // Attempt to parse the returned account balances
+                let pool_balance: MetaPoolBalance = serde_json::de::from_slice(&result)
+                    .expect("Could not get balance from stake pool");
+
+                // Double check values before going forward
+                assert!(pool_balance.st_near.0 > 0, "No st_near balance");
+                assert!(pool_balance.valued_st_near.0 > 0, "No valued_st_near balance");
+                let mut st_near_to_burn = U128::from(0);
+                let mut min_expected_near = U128::from(0);
+                let mut st_near_price: u128 = 0;
+
+                // If no amount specified, simply unstake all
+                if amount.is_none() {
+                    st_near_to_burn = pool_balance.st_near;
+                    min_expected_near = pool_balance.valued_st_near;
+                } else {
+                    // Get st_near / near price, and compute st_near amount
+                    // TODO: Check this division isnt naive
+                    st_near_price = pool_balance.st_near.0.div_euclid(pool_balance.valued_st_near.0);
+                    st_near_to_burn = U128::from(amount.unwrap().div_euclid(st_near_price));
+                    min_expected_near = U128::from(amount.unwrap());
+                }
+                
+                // We have some balances, attempt to unstake
+                // TODO: No fee was calculated, does that cause issues on min_expected_near?
+                let p1 = env::promise_create(
+                    pool_account_id.clone(),
+                    b"liquid_unstake",
+                    json!({
+                        "st_near_to_burn": st_near_to_burn,
+                        "min_expected_near": min_expected_near,
+                    }).to_string().as_bytes(),
+                    ONE_YOCTO,
+                    GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL
+                );
+
+                env::promise_return(p1);
+            }
+            PromiseResult::Failed => {
+                //
+            }
+        }
+    }
 }

@@ -1,7 +1,7 @@
 use near_sdk::{
     assert_one_yocto,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap, UnorderedMap, UnorderedSet, Vector},
+    collections::{LookupMap, UnorderedMap},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
@@ -23,6 +23,7 @@ near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
 pub const NO_DEPOSIT: u128 = 0;
+pub const ONE_YOCTO: u128 = 1;
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
@@ -35,6 +36,7 @@ pub enum StorageKeys {
     StakePoolsPending,
     StakeFungibleToken,
     StakeFungibleTokenPending,
+    YieldFunctions,
 }
 
 #[near_bindgen]
@@ -67,6 +69,9 @@ pub struct Contract {
     // dex_approved_ft: UnorderedSet<AccountId>, // set the tokens that are approved for making swaps
     // dex_slippage_max: u64, // used to configure swap prefs
 
+    // Yield harvesting
+    yield_functions: LookupMap<AccountId, String>
+
     // Storage
     // ft_storage_usage: StorageUsage,
     // nft_storage_usage: StorageUsage,
@@ -91,6 +96,8 @@ impl Contract {
             stake_pending_pools: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
             // stake_ft: UnorderedMap::new(StorageKeys::StakeFungibleToken), // for yield farming
             // stake_pending_ft: UnorderedMap::new(StorageKeys::StakeFungibleTokenPending), // for withdraw yield farming
+
+            yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
         }
     }
 

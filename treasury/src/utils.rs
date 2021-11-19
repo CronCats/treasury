@@ -28,4 +28,7 @@ impl Contract {
             owner_id: old_contract.owner_id,
         }
     }
+
+    // TODO: Add a generic proxy, so future actions do not require custom integrations.
+    // TODO: Could re-use the generic setup for approvals in multisig setup
 }
