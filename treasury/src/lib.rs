@@ -1,35 +1,41 @@
 use near_sdk::{
     assert_one_yocto,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap, UnorderedMap, Vector},
+    collections::{LookupMap, TreeMap, UnorderedMap, UnorderedSet, Vector},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, StorageUsage,
+    serde_json,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult, StorageUsage,
 };
 
 mod owner;
-mod utils;
+// mod utils;
 mod views;
-mod storage_impl;
-mod ft_impl;
-mod nft_impl;
+mod staking;
+// mod storage_impl;
+// mod ft_impl;
+// mod nft_impl;
 
 near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
+pub const NO_DEPOSIT: u128 = 0;
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 
-// #[derive(BorshStorageKey, BorshSerialize)]
-// pub enum StorageKeys {
-//     Tasks,
-// }
+#[derive(BorshStorageKey, BorshSerialize)]
+pub enum StorageKeys {
+    StakePools,
+    StakePoolsPending,
+    StakeFungibleToken,
+    StakeFungibleTokenPending,
+}
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -37,28 +43,29 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId, // single or DAO entity
-    approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
-    signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
+    // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
+    // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
 
-    // Collateral Pools (NOTE: Serious WIP here :D )
-    ft_accounts: UnorderedSet<AccountId>,
-    ft_balances: UnorderedMap<AccountId, u128>,
-    nft_accounts: UnorderedSet<AccountId>,
-    nft_holdings: UnorderedMap<AccountId, Vector<u128>>,
+    // // Collateral Pools (NOTE: Serious WIP here :D )
+    // ft_accounts: UnorderedSet<AccountId>,
+    // ft_balances: UnorderedMap<AccountId, u128>,
+    // nft_accounts: UnorderedSet<AccountId>,
+    // nft_holdings: UnorderedMap<AccountId, Vector<u128>>,
 
     // Staking
     stake_threshold_percentage: u128,
     stake_eval_period: u128, // Decide on time delay, in seconds
     stake_eval_cadence: String, // OR cron cadence
-    stake_pools: UnorderedMap<AccountId, u128>, // for near staking, can be metapool, or other pools directly
-    stake_pending_pools: UnorderedMap<AccountId, u128>, // for withdraw near staking
-    stake_ft: UnorderedMap<AccountId, u128>, // for yield farming
-    stake_pending_ft: UnorderedMap<AccountId, u128>, // for withdraw yield farming
+    stake_pools: UnorderedMap<AccountId, Balance>, // for near staking, can be metapool, or other pools directly
+    stake_pending_pools: UnorderedMap<AccountId, Balance>, // for withdraw near staking
+    // stake_ft: UnorderedMap<AccountId, u128>, // for yield farming
+    // stake_pending_ft: UnorderedMap<AccountId, u128>, // for withdraw yield farming
 
-    // Collateral Adapters
-    // TODO: Figure out how these can become more like plugins for others to extend
-    dex_approved_accounts: UnorderedSet<AccountId>, // set accounts that are approved for making swaps
-    dex_approved_ft: UnorderedSet<AccountId>, // set the tokens that are approved for making swaps
+    // // Collateral Adapters
+    // // TODO: Figure out how these can become more like plugins for others to extend
+    // dex_approved_accounts: UnorderedSet<AccountId>, // set accounts that are approved for making swaps
+    // dex_approved_ft: UnorderedSet<AccountId>, // set the tokens that are approved for making swaps
+    // dex_slippage_max: u64, // used to configure swap prefs
 
     // Storage
     // ft_storage_usage: StorageUsage,
@@ -66,37 +73,38 @@ pub struct Contract {
 }
 
 #[near_bindgen]
-impl Treasury {
+impl Contract {
+    /// Initialize the contracts defaults, should be done from deploy
+    ///
     /// ```bash
-    /// near call cron.testnet new --accountId cron.testnet
+    /// near call treasury.testnet new --accountId treasury.testnet
     /// ```
     #[init]
     pub fn new() -> Self {
-        let mut this = Treasury {
+        Contract {
             paused: false,
             owner_id: env::signer_account_id(),
-        };
-        // this.measure_account_storage_usage();
-        this
+            stake_threshold_percentage: 3000, // 30%
+            stake_eval_period: 86400, // Daily eval delay, in seconds
+            stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
+            stake_pools: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
+            stake_pending_pools: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
+            // stake_ft: UnorderedMap::new(StorageKeys::StakeFungibleToken), // for yield farming
+            // stake_pending_ft: UnorderedMap::new(StorageKeys::StakeFungibleTokenPending), // for withdraw yield farming
+        }
     }
 
-    // /// Measure the storage an agent will take and need to provide
-    // fn measure_account_storage_usage(&mut self) {
-    //     let initial_storage_usage = env::storage_usage();
-    //     // Create a temporary, dummy entry and measure the storage used.
-    //     let tmp_account_id = "a".repeat(64);
-    //     let tmp_agent = Agent {
-    //         status: agent::AgentStatus::Pending,
-    //         payable_account_id: tmp_account_id.clone(),
-    //         balance: U128::from(0),
-    //         total_tasks_executed: U128::from(0),
-    //         last_missed_slot: 0,
-    //     };
-    //     self.agents.insert(&tmp_account_id, &tmp_agent);
-    //     self.agent_storage_usage = env::storage_usage() - initial_storage_usage;
-    //     // Remove the temporary entry.
-    //     self.agents.remove(&tmp_account_id);
-    // }
+    // Stubbed interface:
+    // * approve token
+    // * deposit token
+    // * withdraw token
+    // * swap token
+    // * transfer Token/NFT
+    // * stake
+    // * unstake
+    // * get supported tokens
+    // * get balances
+    // * get balance of token
 }
 
 // #[cfg(test)]
