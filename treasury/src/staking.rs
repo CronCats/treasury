@@ -25,10 +25,8 @@ pub struct PoolBalance {
 pub struct MetaPoolBalance {
     pub account_id: AccountId,
     pub available: U128,
-
     pub st_near: U128,
     pub valued_st_near: U128, // st_near * stNEAR_price
-
     pub meta: U128,
     pub realized_meta: U128,
     pub unstaked: U128,
@@ -360,18 +358,14 @@ impl Contract {
                 // Double check values before going forward
                 assert!(pool_balance.st_near.0 > 0, "No st_near balance");
                 assert!(pool_balance.valued_st_near.0 > 0, "No valued_st_near balance");
-                let mut st_near_to_burn = U128::from(0);
-                let mut min_expected_near = U128::from(0);
-                let mut st_near_price: u128 = 0;
+                let mut st_near_to_burn = pool_balance.st_near;
+                let mut min_expected_near = pool_balance.valued_st_near;
 
                 // If no amount specified, simply unstake all
-                if amount.is_none() {
-                    st_near_to_burn = pool_balance.st_near;
-                    min_expected_near = pool_balance.valued_st_near;
-                } else {
+                if amount.is_some() {
                     // Get st_near / near price, and compute st_near amount
                     // TODO: Check this division isnt naive
-                    st_near_price = pool_balance.st_near.0.div_euclid(pool_balance.valued_st_near.0);
+                    let st_near_price = pool_balance.st_near.0.div_euclid(pool_balance.valued_st_near.0);
                     st_near_to_burn = U128::from(amount.unwrap().div_euclid(st_near_price));
                     min_expected_near = U128::from(amount.unwrap());
                 }

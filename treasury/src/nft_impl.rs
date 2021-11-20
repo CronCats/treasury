@@ -12,6 +12,13 @@ use near_sdk::{
 
 setup_alloc!();
 
+// TODO: Stubbed interface:
+// * receive NFT
+// * transfer NFT
+// * get supported NFTs
+// * get NFTs owned
+// * on approve NFT (Needed?)
+
 const BASE_GAS: Gas = 5_000_000_000_000;
 const PROMISE_CALL: Gas = 5_000_000_000_000;
 const GAS_FOR_NFT_ON_APPROVE: Gas = BASE_GAS + PROMISE_CALL;

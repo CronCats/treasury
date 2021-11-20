@@ -1,14 +1,13 @@
 use near_sdk::{
-    assert_one_yocto,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, UnorderedMap},
+    collections::{LookupMap, UnorderedMap, Vector},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize},
     serde_json::json,
     serde_json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult, StorageUsage,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
 };
 
 mod owner;
@@ -16,7 +15,7 @@ mod owner;
 mod views;
 mod staking;
 // mod storage_impl;
-// mod ft_impl;
+mod ft_impl;
 // mod nft_impl;
 
 near_sdk::setup_alloc!();
@@ -32,10 +31,9 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
+    FungibleTokenBalances,
     StakePools,
     StakePoolsPending,
-    StakeFungibleToken,
-    StakeFungibleTokenPending,
     YieldFunctions,
 }
 
@@ -48,9 +46,8 @@ pub struct Contract {
     // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
 
-    // // Collateral Pools (NOTE: Serious WIP here :D )
-    // ft_accounts: UnorderedSet<AccountId>,
-    // ft_balances: UnorderedMap<AccountId, u128>,
+    // Collateral Pools
+    ft_balances: UnorderedMap<AccountId, u128>,
     // nft_accounts: UnorderedSet<AccountId>,
     // nft_holdings: UnorderedMap<AccountId, Vector<u128>>,
 
@@ -60,8 +57,6 @@ pub struct Contract {
     stake_eval_cadence: String, // OR cron cadence
     stake_pools: UnorderedMap<AccountId, Balance>, // for near staking, can be metapool, or other pools directly
     stake_pending_pools: UnorderedMap<AccountId, Balance>, // for withdraw near staking
-    // stake_ft: UnorderedMap<AccountId, u128>, // for yield farming
-    // stake_pending_ft: UnorderedMap<AccountId, u128>, // for withdraw yield farming
 
     // // Collateral Adapters
     // // TODO: Figure out how these can become more like plugins for others to extend
@@ -89,29 +84,15 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             stake_threshold_percentage: 3000, // 30%
             stake_eval_period: 86400, // Daily eval delay, in seconds
             stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
             stake_pools: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
             stake_pending_pools: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
-            // stake_ft: UnorderedMap::new(StorageKeys::StakeFungibleToken), // for yield farming
-            // stake_pending_ft: UnorderedMap::new(StorageKeys::StakeFungibleTokenPending), // for withdraw yield farming
-
             yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
         }
     }
-
-    // Stubbed interface:
-    // * approve token
-    // * deposit token
-    // * withdraw token
-    // * swap token
-    // * transfer Token/NFT
-    // * stake
-    // * unstake
-    // * get supported tokens
-    // * get balances
-    // * get balance of token
 }
 
 // #[cfg(test)]

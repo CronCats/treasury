@@ -1,80 +1,132 @@
-use crate::Contract;
-use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
-use near_sdk::json_types::{ValidAccountId, U128};
-use near_sdk::{assert_one_yocto, env, log, AccountId, Balance, Promise};
+use crate::*;
 
-const BASE_GAS: Gas = 5_000_000_000_000;
-const PROMISE_CALL: Gas = 5_000_000_000_000;
-const GAS_FOR_FT_ON_TRANSFER: Gas = BASE_GAS + PROMISE_CALL;
+pub const GAS_FT_TRANSFER: Gas = 10_000_000_000_000;
 
-const NO_DEPOSIT: Balance = 0;
-
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-pub struct DeFi {
-    fungible_token_account_id: AccountId,
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct FungibleTokenBalance {
+    pub account_id: AccountId,
+    pub balance: Balance,
 }
 
-// Defining cross-contract interface. This allows to create a new promise.
-#[ext_contract(ext_self)]
-pub trait ValueReturnTrait {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128>;
-}
+// TODO:
+// * storage deposit???
 
-// Have to repeat the same trait for our own implementation.
-trait ValueReturnTrait {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128>;
-}
-
-#[near_bindgen]
-impl DeFi {
-    #[init]
-    pub fn new(fungible_token_account_id: ValidAccountId) -> Self {
-        assert!(!env::state_exists(), "Already initialized");
-        Self { fungible_token_account_id: fungible_token_account_id.into() }
+// #[near_bindgen]
+impl Contract {
+    /// Supported Fungible Tokens
+    /// 
+    /// ```bash
+    /// near call treasury.testnet get_ft_list
+    /// ```
+    pub fn get_ft_list(&self) -> Vec<AccountId> {
+        self.ft_balances.keys_as_vector().to_vec()
     }
-}
 
-#[near_bindgen]
-impl FungibleTokenReceiver for DeFi {
-    /// If given `msg: "take-my-money", immediately returns U128::From(0)
-    /// Otherwise, makes a cross-contract call to own `value_please` function, passing `msg`
-    /// value_please will attempt to parse `msg` as an integer and return a U128 version of it
-    fn ft_on_transfer(
-        &mut self,
-        sender_id: ValidAccountId,
-        amount: U128,
-        msg: String,
-    ) -> PromiseOrValue<U128> {
-        // Verifying that we were called by fungible token contract that we expect.
-        assert_eq!(
-            &env::predecessor_account_id(),
-            &self.fungible_token_account_id,
-            "Only supports the one fungible token contract"
-        );
-        log!("in {} tokens from @{} ft_on_transfer, msg = {}", amount.0, sender_id.as_ref(), msg);
-        match msg.as_str() {
-            "take-my-money" => PromiseOrValue::Value(U128::from(0)),
-            _ => {
-                let prepaid_gas = env::prepaid_gas();
-                let account_id = env::current_account_id();
-                ext_self::value_please(
-                    msg,
-                    &account_id,
-                    NO_DEPOSIT,
-                    prepaid_gas - GAS_FOR_FT_ON_TRANSFER,
-                )
-                .into()
+    /// Fungible Token Balances
+    /// NOTE: Unlike the FT standard, this account_id is the "fungible token account id"
+    /// 
+    /// ```bash
+    /// near call treasury.testnet ft_balances '{"from_index": 0, "limit": 10}'
+    /// ```
+    pub fn ft_balances(
+        &self,
+        from_index: Option<U64>,
+        limit: Option<U64>,
+    ) -> Vec<FungibleTokenBalance> {
+        let mut result: Vec<FungibleTokenBalance> = Vec::new();
+        let mut start = 0;
+        let mut end = 10;
+        if let Some(from_index) = from_index {
+            start = from_index.0;
+        }
+        if let Some(limit) = limit {
+            end = u64::min(start + limit.0, self.ft_balances.len());
+        }
+
+        // Return all tasks within range
+        let keys = self.ft_balances.keys_as_vector();
+        for i in start..end {
+            if let Some(account_id) = keys.get(i) {
+                if let Some(balance) = self.ft_balances.get(&account_id) {
+                    result.push(FungibleTokenBalance { account_id, balance });
+                }
             }
         }
+        result
     }
-}
 
-#[near_bindgen]
-impl ValueReturnTrait for DeFi {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128> {
-        log!("in value_please, amount_to_return = {}", amount_to_return);
-        let amount: Balance = amount_to_return.parse().expect("Not an integer");
-        PromiseOrValue::Value(amount.into())
+    /// Single Fungible Token Balance
+    /// NOTE: Unlike the FT standard, this account_id is the "fungible token account id"
+    /// 
+    /// ```bash
+    /// near call treasury.testnet ft_balance_of '{"account_id": "wrap.testnet"}' --accountId treasury.testnet
+    /// ```
+    pub fn ft_balance_of(
+        &self,
+        account_id: AccountId,
+    ) -> U128 {
+        U128::from(self.ft_balances.get(&account_id).unwrap_or(0))
+    }
+
+    /// Transfer Fungible Token
+    /// NOTE: Assumes storage deposit has occurred for recipient
+    /// 
+    /// ```bash
+    /// near call treasury.testnet ft_transfer '{"ft_account_id": "wrap.testnet", "to_account_id": "user.account.testnet", "to_amount": "100000000000000000000000000000000"}' --accountId treasury.testnet
+    /// ```
+    pub fn ft_transfer(
+        &mut self,
+        ft_account_id: AccountId,
+        to_amount: U128,
+        to_account_id: AccountId,
+    ) {
+        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
+
+        // Check if treasury holds the ft, and has enough balance
+        let ft_balance = self.ft_balances.get(&ft_account_id).expect("No token balance found");
+        assert!(ft_balance >= to_amount.0, "Transfer amount too high");
+
+        // NOTE: Lame accounting here, should be changed to callback
+        let mut total = to_amount.0;
+        total = total.saturating_add(ft_balance);
+        self.ft_balances.insert(&env::predecessor_account_id(), &total);
+        
+        let p = env::promise_create(
+            ft_account_id,
+            b"ft_transfer",
+            json!({
+                "receiver_id": to_account_id,
+                "amount": to_amount.0,
+            }).to_string().as_bytes(),
+            ONE_YOCTO,
+            GAS_FT_TRANSFER
+        );
+
+        env::promise_return(p);
+    }
+    
+    /// Receive Fungible tokens
+    /// keep track of the FTs sent to this treasury
+    /// NOTE: Should only be triggered by FT standards
+    pub fn ft_on_transfer(
+        &mut self,
+        // sender_id
+        _: ValidAccountId,
+        amount: U128,
+        msg: String,
+    ) {
+        let ft_balance = self.ft_balances.get(&env::predecessor_account_id());
+        log!("{} {}, msg: {:?}", amount.0, &env::predecessor_account_id(), msg);
+
+        // NOTE: Could re-evaluate to just use the token contracts for balance totals
+        if ft_balance.is_none() {
+            self.ft_balances.insert(&env::predecessor_account_id(), &amount.0);
+        } else {
+            let mut total = amount.0;
+            if let Some(ft_balance) = ft_balance {
+                total = total.saturating_add(ft_balance);
+            }
+            self.ft_balances.insert(&env::predecessor_account_id(), &total);
+        }
     }
 }
