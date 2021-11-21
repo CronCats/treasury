@@ -23,7 +23,6 @@ impl Contract {
     }
 
     /// Fungible Token Balances
-    /// NOTE: Unlike the FT standard, this account_id is the "fungible token account id"
     /// 
     /// ```bash
     /// near call treasury.testnet ft_balances '{"from_index": 0, "limit": 10}'
@@ -36,6 +35,7 @@ impl Contract {
         let mut result: Vec<FungibleTokenBalance> = Vec::new();
         let mut start = 0;
         let mut end = 10;
+        
         if let Some(from_index) = from_index {
             start = from_index.0;
         }
@@ -52,6 +52,7 @@ impl Contract {
                 }
             }
         }
+
         result
     }
 
