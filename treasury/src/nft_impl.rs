@@ -2,20 +2,21 @@ use crate::*;
 
 pub const GAS_NFT_TRANSFER: Gas = 10_000_000_000_000;
 
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct NonFungibleTokens {
     pub account_id: AccountId,
     pub tokens: Vec<String>,
 }
 
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct NonFungibleToken {
   id: String,
   owner_id: String,
 }
 
 // TODO:
-// * transfer
 // * receive?
 // * mint?
 // * storage deposit???

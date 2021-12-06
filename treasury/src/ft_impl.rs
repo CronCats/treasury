@@ -1,6 +1,8 @@
 use crate::*;
 
 pub const GAS_FT_TRANSFER: Gas = 10_000_000_000_000;
+pub const GAS_FT_BALANCE_OF: Gas = 10_000_000_000_000;
+pub const GAS_FT_BALANCE_OF_CALLBACK: Gas = 10_000_000_000_000;
 
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct FungibleTokenBalance {
@@ -11,7 +13,7 @@ pub struct FungibleTokenBalance {
 // TODO:
 // * storage deposit???
 
-// #[near_bindgen]
+#[near_bindgen]
 impl Contract {
     /// Supported Fungible Tokens
     /// 
@@ -105,29 +107,84 @@ impl Contract {
 
         env::promise_return(p);
     }
-    
-    /// Receive Fungible tokens
-    /// keep track of the FTs sent to this treasury
-    /// NOTE: Should only be triggered by FT standards
-    pub fn ft_on_transfer(
-        &mut self,
-        // sender_id
-        _: ValidAccountId,
-        amount: U128,
-        msg: String,
-    ) {
-        let ft_balance = self.ft_balances.get(&env::predecessor_account_id());
-        log!("{} {}, msg: {:?}", amount.0, &env::predecessor_account_id(), msg);
 
-        // NOTE: Could re-evaluate to just use the token contracts for balance totals
-        if ft_balance.is_none() {
-            self.ft_balances.insert(&env::predecessor_account_id(), &amount.0);
-        } else {
-            let mut total = amount.0;
-            if let Some(ft_balance) = ft_balance {
-                total = total.saturating_add(ft_balance);
+    /// Get & Store Fungible Token Balance
+    /// Note: Would be epic if we could get auto-notified of this...
+    /// 
+    /// ```bash
+    /// near call treasury.testnet store_ft_balance_of '{"ft_account_id": "wrap.testnet"}' --accountId treasury.testnet
+    /// ```
+    pub fn store_ft_balance_of(&mut self, ft_account_id: ValidAccountId) {
+        let p1 = env::promise_create(
+            ft_account_id.clone().into(),
+            b"ft_balance_of",
+            json!({
+                "account_id": env::current_account_id().to_string(),
+            }).to_string().as_bytes(),
+            NO_DEPOSIT,
+            GAS_FT_BALANCE_OF
+        );
+
+        env::promise_then(
+            p1,
+            env::current_account_id(),
+            b"store_ft_balance_of_callback",
+            json!({
+                "ft_account_id": ft_account_id.to_string(),
+            }).to_string().as_bytes(),
+            NO_DEPOSIT,
+            GAS_FT_BALANCE_OF_CALLBACK
+        );
+    }
+
+    #[private]
+    pub fn store_ft_balance_of_callback(&mut self, ft_account_id: AccountId) {
+        assert_eq!(env::promise_results_count(), 1, "Expected 1 promise result.");
+
+        // Return balance or 0
+        match env::promise_result(0) {
+            PromiseResult::NotReady => {
+                unreachable!()
             }
-            self.ft_balances.insert(&env::predecessor_account_id(), &total);
+            PromiseResult::Successful(result) => {
+                // Attempt to parse the returned balance amount
+                let amount: U128 = serde_json::de::from_slice(&result)
+                    .expect("Could not get balance from fungible token");
+
+                // Update the token balance
+                self.ft_balances.insert(&ft_account_id, &amount.0);
+            }
+            PromiseResult::Failed => {}
+        }
+    }
+
+    /// Compute Fungible Token Balances for Supported FTs
+    /// 
+    /// ```bash
+    /// near call treasury.testnet compute_ft_balances '{"from_index": 0, "limit": 10}'
+    /// ```
+    pub fn compute_ft_balances(
+        &mut self,
+        from_index: Option<U64>,
+        limit: Option<U64>,
+    ) {
+        let mut start = 0;
+        let mut end = 10;
+        
+        if let Some(from_index) = from_index {
+            start = from_index.0;
+        }
+        if let Some(limit) = limit {
+            end = u64::min(start + limit.0, self.ft_balances.len());
+        }
+
+        // Return all tasks within range
+        let keys = self.ft_balances.keys_as_vector();
+        for i in start..end {
+            if let Some(account_id) = keys.get(i) {
+                // TODO: Trigger promise to get FT balance
+                log!("get balance for {:?}", account_id);
+            }
         }
     }
 }
