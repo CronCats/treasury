@@ -1,11 +1,14 @@
+#![cfg(test)]
+#![cfg(not(target_arch = "wasm32"))]
+
 use serde_json::json;
 
 use workspaces::prelude::*;
 
-const TREASURY_WASM_FILEPATH: &str = "./res/treasury.wasm";
+const TREASURY_WASM_FILEPATH: &str = "../res/treasury.wasm";
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_something() -> anyhow::Result<()> {
     let worker = workspaces::sandbox();
     let wasm = std::fs::read(TREASURY_WASM_FILEPATH)?;
     let contract = worker.dev_deploy(wasm).await.unwrap();
