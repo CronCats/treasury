@@ -21,7 +21,7 @@ use near_contract_standards::fungible_token::metadata::{
 use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
-use near_sdk::json_types::{ValidAccountId, U128};
+use near_sdk::json_types::{AccountId, U128};
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue};
 
 near_sdk::setup_alloc!();
@@ -40,7 +40,7 @@ impl Contract {
     /// Initializes the contract with the given total supply owned by the given `owner_id` with
     /// default metadata (for example purposes only).
     #[init]
-    pub fn new_default_meta(owner_id: ValidAccountId, total_supply: U128) -> Self {
+    pub fn new_default_meta(owner_id: AccountId, total_supply: U128) -> Self {
         Self::new(
             owner_id,
             total_supply,
@@ -60,7 +60,7 @@ impl Contract {
     /// the given fungible token metadata.
     #[init]
     pub fn new(
-        owner_id: ValidAccountId,
+        owner_id: AccountId,
         total_supply: U128,
         metadata: FungibleTokenMetadata,
     ) -> Self {
@@ -104,7 +104,7 @@ mod tests {
 
     const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))

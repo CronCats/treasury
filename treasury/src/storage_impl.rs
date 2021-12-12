@@ -2,7 +2,7 @@ use crate::Contract;
 use near_contract_standards::storage_management::{
     StorageBalance, StorageBalanceBounds, StorageManagement,
 };
-use near_sdk::json_types::{ValidAccountId, U128};
+use near_sdk::json_types::{AccountId, U128};
 use near_sdk::{assert_one_yocto, env, log, AccountId, Balance, Promise};
 
 impl Contract {
@@ -26,7 +26,7 @@ impl StorageManagement for Contract {
     #[allow(unused_variables)]
     fn storage_deposit(
         &mut self,
-        account_id: Option<ValidAccountId>,
+        account_id: Option<AccountId>,
         registration_only: Option<bool>,
     ) -> StorageBalance {
         self.register_agent(account_id.clone());
@@ -92,7 +92,7 @@ impl StorageManagement for Contract {
         }
     }
 
-    fn storage_balance_of(&self, account_id: ValidAccountId) -> Option<StorageBalance> {
+    fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance> {
         self.internal_storage_balance_of(account_id.as_ref())
     }
 }
