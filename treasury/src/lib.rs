@@ -5,15 +5,15 @@ use near_sdk::{
     json_types::{U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
-    serde_json::json,
     serde_json,
+    serde_json::json,
     AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
 };
 
 mod owner;
 // mod utils;
-mod views;
 mod staking;
+mod views;
 // mod storage_impl;
 mod ft_impl;
 mod nft_impl;
@@ -25,7 +25,6 @@ pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = Gas(3_000_000_000_000);
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
-
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
@@ -51,17 +50,15 @@ pub struct Contract {
 
     // Staking
     stake_threshold_percentage: u128,
-    stake_eval_period: u128, // Decide on time delay, in seconds
+    stake_eval_period: u128,    // Decide on time delay, in seconds
     stake_eval_cadence: String, // OR cron cadence
     stake_pools: UnorderedMap<AccountId, Balance>, // for near staking, can be metapool, or other pools directly
     stake_pending_pools: UnorderedMap<AccountId, Balance>, // for withdraw near staking
 
     // Yield harvesting
-    yield_functions: LookupMap<AccountId, String>
-
-    // Storage
-    // ft_storage_usage: StorageUsage,
-    // nft_storage_usage: StorageUsage,
+    yield_functions: LookupMap<AccountId, String>, // Storage
+                                                   // ft_storage_usage: StorageUsage,
+                                                   // nft_storage_usage: StorageUsage
 }
 
 #[near_bindgen]
@@ -78,8 +75,8 @@ impl Contract {
             owner_id: env::signer_account_id(),
             ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             nft_holdings: UnorderedMap::new(StorageKeys::NonFungibleTokenHoldings),
-            stake_threshold_percentage: 3000, // 30%
-            stake_eval_period: 86400, // Daily eval delay, in seconds
+            stake_threshold_percentage: 3000,              // 30%
+            stake_eval_period: 86400,                      // Daily eval delay, in seconds
             stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
             stake_pools: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
             stake_pending_pools: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
