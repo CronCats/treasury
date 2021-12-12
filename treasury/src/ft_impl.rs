@@ -4,7 +4,8 @@ pub const GAS_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
 pub const GAS_FT_BALANCE_OF: Gas = Gas(10_000_000_000_000);
 pub const GAS_FT_BALANCE_OF_CALLBACK: Gas = Gas(10_000_000_000_000);
 
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct FungibleTokenBalance {
     pub account_id: AccountId,
     pub balance: Balance,
