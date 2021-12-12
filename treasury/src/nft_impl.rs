@@ -1,6 +1,6 @@
 use crate::*;
 
-pub const GAS_NFT_TRANSFER: Gas = 10_000_000_000_000;
+pub const GAS_NFT_TRANSFER: Gas = Gas(10_000_000_000_000);
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -83,7 +83,7 @@ impl Contract {
         token_ids.iter()
             .map(|id| NonFungibleToken {
                 id: id.to_string(),
-                owner_id: env::current_account_id()
+                owner_id: env::current_account_id().to_string()
             })
             .collect()
     }
@@ -115,7 +115,7 @@ impl Contract {
         
         let p = env::promise_create(
             nft_account_id,
-            b"nft_transfer",
+            "nft_transfer",
             json!({
                 "receiver_id": to_account_id,
                 "token_id": to_token_id,
@@ -216,7 +216,7 @@ impl Contract {
     //             )
     //             .into()
     //         }
-    //         _ => env::panic(b"unsupported msg"),
+    //         _ => env::panic("unsupported msg"),
     //     }
     // }
 }

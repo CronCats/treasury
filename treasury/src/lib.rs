@@ -2,7 +2,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, UnorderedMap},
     env,
-    json_types::{ValidAccountId, U128, U64},
+    json_types::{U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
@@ -18,14 +18,12 @@ mod staking;
 mod ft_impl;
 mod nft_impl;
 
-near_sdk::setup_alloc!();
-
 // Balance & Fee Definitions
 pub const NO_DEPOSIT: u128 = 0;
 pub const ONE_YOCTO: u128 = 1;
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
-pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
+pub const GAS_BASE_FEE: Gas = Gas(3_000_000_000_000);
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 
@@ -93,14 +91,14 @@ impl Contract {
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
-//     use near_sdk::json_types::ValidAccountId;
+//     use near_sdk::json_types::AccountId;
 //     use near_sdk::test_utils::{accounts, VMContextBuilder};
 //     use near_sdk::{testing_env, MockedBlockchain};
 
 //     const BLOCK_START_BLOCK: u64 = 52_201_040;
 //     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
 
-//     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+//     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
 //         let mut builder = VMContextBuilder::new();
 //         builder
 //             .current_account_id(accounts(0))

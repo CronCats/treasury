@@ -1,14 +1,14 @@
 use crate::*;
 
-pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_UNSTAKE: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_WITHDRAW_ALL: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_GET_STAKE_BALANCE: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_GET_STAKE_BALANCE_CALLBACK: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_LIQUID_UNSTAKE_VIEW: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = 10_000_000_000_000;
-pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = 10_000_000_000_000;
-pub const GAS_YIELD_HARVEST: Gas = 10_000_000_000_000;
+pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_UNSTAKE: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_WITHDRAW_ALL: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_GET_STAKE_BALANCE: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_GET_STAKE_BALANCE_CALLBACK: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_VIEW: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = Gas(10_000_000_000_000);
+pub const GAS_YIELD_HARVEST: Gas = Gas(10_000_000_000_000);
 
 #[derive(Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -134,7 +134,7 @@ impl Contract {
         // Lastly, make the cross-contract call to DO the staking :D
         let p = env::promise_create(
             pool_account_id,
-            b"deposit_and_stake",
+            "deposit_and_stake",
             json!({}).to_string().as_bytes(),
             stake_amount,
             GAS_STAKE_DEPOSIT_AND_STAKE
@@ -168,7 +168,7 @@ impl Contract {
         // Lastly, make the cross-contract call to DO the unstaking :D
         let p = env::promise_create(
             pool_account_id,
-            b"unstake",
+            "unstake",
             json!({
                 "amount": amount,
             }).to_string().as_bytes(),
@@ -199,7 +199,7 @@ impl Contract {
         // Lastly, make the cross-contract call to DO the withdraw :D
         let p = env::promise_create(
             pool_account_id,
-            b"withdraw_all",
+            "withdraw_all",
             json!({}).to_string().as_bytes(),
             NO_DEPOSIT,
             GAS_STAKE_WITHDRAW_ALL
@@ -222,7 +222,7 @@ impl Contract {
         // make the cross-contract call to get the balance
         let p1 = env::promise_create(
             pool_account_id.clone(),
-            b"get_account",
+            "get_account",
             json!({
                 "account_id": env::current_account_id(),
             }).to_string().as_bytes(),
@@ -233,7 +233,7 @@ impl Contract {
         let p2 = env::promise_then(
             p1,
             env::current_account_id(),
-            b"callback_get_staked_balance",
+            "callback_get_staked_balance",
             json!({
                 "pool_account_id": pool_account_id,
             }).to_string().as_bytes(),
@@ -289,7 +289,7 @@ impl Contract {
         // Make a yield harvest call, including yocto since most include FT that needs txns with priveledges
         let p = env::promise_create(
             pool_account_id,
-            yield_function.as_bytes(),
+            &yield_function,
             json!({}).to_string().as_bytes(),
             ONE_YOCTO,
             GAS_YIELD_HARVEST
@@ -313,7 +313,7 @@ impl Contract {
         // First check if there are any staked balances
         let p1 = env::promise_create(
             pool_account_id.clone(),
-            b"get_account_info",
+            "get_account_info",
             json!({
                 "account_id": env::current_account_id(),
             }).to_string().as_bytes(),
@@ -324,7 +324,7 @@ impl Contract {
         let p2 = env::promise_then(
             p1,
             env::current_account_id(),
-            b"callback_liquid_unstake",
+            "callback_liquid_unstake",
             json!({
                 "pool_account_id": pool_account_id,
                 "amount": amount,
@@ -374,7 +374,7 @@ impl Contract {
                 // TODO: No fee was calculated, does that cause issues on min_expected_near?
                 let p1 = env::promise_create(
                     pool_account_id.clone(),
-                    b"liquid_unstake",
+                    "liquid_unstake",
                     json!({
                         "st_near_to_burn": st_near_to_burn,
                         "min_expected_near": min_expected_near,

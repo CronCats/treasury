@@ -1,8 +1,8 @@
 use crate::*;
 
-pub const GAS_FT_TRANSFER: Gas = 10_000_000_000_000;
-pub const GAS_FT_BALANCE_OF: Gas = 10_000_000_000_000;
-pub const GAS_FT_BALANCE_OF_CALLBACK: Gas = 10_000_000_000_000;
+pub const GAS_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
+pub const GAS_FT_BALANCE_OF: Gas = Gas(10_000_000_000_000);
+pub const GAS_FT_BALANCE_OF_CALLBACK: Gas = Gas(10_000_000_000_000);
 
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct FungibleTokenBalance {
@@ -96,7 +96,7 @@ impl Contract {
         
         let p = env::promise_create(
             ft_account_id,
-            b"ft_transfer",
+            "ft_transfer",
             json!({
                 "receiver_id": to_account_id,
                 "amount": to_amount.0,
@@ -114,10 +114,10 @@ impl Contract {
     /// ```bash
     /// near call treasury.testnet store_ft_balance_of '{"ft_account_id": "wrap.testnet"}' --accountId treasury.testnet
     /// ```
-    pub fn store_ft_balance_of(&mut self, ft_account_id: ValidAccountId) {
+    pub fn store_ft_balance_of(&mut self, ft_account_id: AccountId) {
         let p1 = env::promise_create(
             ft_account_id.clone().into(),
-            b"ft_balance_of",
+            "ft_balance_of",
             json!({
                 "account_id": env::current_account_id().to_string(),
             }).to_string().as_bytes(),
@@ -128,7 +128,7 @@ impl Contract {
         env::promise_then(
             p1,
             env::current_account_id(),
-            b"store_ft_balance_of_callback",
+            "store_ft_balance_of_callback",
             json!({
                 "ft_account_id": ft_account_id.to_string(),
             }).to_string().as_bytes(),
