@@ -1,25 +1,22 @@
 #![cfg(test)]
 #![cfg(not(target_arch = "wasm32"))]
+use near_sdk::json_types::U128;
 use serde_json::json;
-// use workspaces::prelude::*;
+use workspaces::prelude::*;
 use workspaces::{Contract, Network, Worker};
 
 // Priority ordered mods
 mod utils;
 // mod init;
+mod ft_impl;
 
 // Core runtime contracts
 const TREASURY_WASM: &str = "../res/treasury.wasm";
 const FUNGIBLE_TOKEN_WASM: &str = "../res/fungible_token.wasm";
 const NON_FUNGIBLE_TOKEN_WASM: &str = "../res/non_fungible_token.wasm";
 
-// Optionals
-// const DEFI_WASM: &str = "../res/defi.wasm";
-// const APPROVAL_RECEIVER_WASM: &str = "../res/approval_receiver.wasm";
-// const TOKEN_RECEIVER_WASM: &str = "../res/token_receiver.wasm";
-
 async fn treasury_init(worker: Worker<impl Network>, contract: &Contract) -> anyhow::Result<()> {
-    let outcome = worker
+    worker
         .call(
             contract,
             "new".to_string(),
@@ -27,8 +24,6 @@ async fn treasury_init(worker: Worker<impl Network>, contract: &Contract) -> any
             None,
         )
         .await?;
-
-    println!("treasury_default: {:#?}", outcome);
 
     let result = worker
         .view(contract.id().clone(), "version".to_string(), Vec::new())
@@ -42,10 +37,18 @@ async fn treasury_init(worker: Worker<impl Network>, contract: &Contract) -> any
 #[tokio::test]
 async fn main() -> anyhow::Result<()> {
     let worker = workspaces::sandbox();
+    let agent = worker.dev_create().await?;
+    println!("AGENT: {}", agent.id());
 
-    let treasury = utils::dev_deploy(worker.clone(), TREASURY_WASM).await.expect("Treasury deploy failed");
-    let ft = utils::dev_deploy(worker.clone(), FUNGIBLE_TOKEN_WASM).await.expect("Fungible Token deploy failed");
-    let nft = utils::dev_deploy(worker.clone(), NON_FUNGIBLE_TOKEN_WASM).await.expect("Non-Fungible Token deploy failed");
+    let treasury = utils::dev_deploy(worker.clone(), TREASURY_WASM)
+        .await
+        .expect("Treasury deploy failed");
+    let ft = utils::dev_deploy(worker.clone(), FUNGIBLE_TOKEN_WASM)
+        .await
+        .expect("Fungible Token deploy failed");
+    let nft = utils::dev_deploy(worker.clone(), NON_FUNGIBLE_TOKEN_WASM)
+        .await
+        .expect("Non-Fungible Token deploy failed");
 
     println!("Treasury ID: {}", treasury.id());
     println!("FT ID: {}", ft.id());
@@ -53,37 +56,52 @@ async fn main() -> anyhow::Result<()> {
 
     // initialize each contract with basics:
     treasury_init(worker.clone(), &treasury).await?;
+    ft_impl::init(worker.clone(), &ft).await?;
+    // ft_impl::mint_to_account(worker.clone(), agent.clone(), ft.id()).await?;
 
-    // let wasm = std::fs::read(TREASURY_WASM_FILEPATH)?;
-    // let contract = worker.dev_deploy(wasm).await.unwrap();
+    agent
+        .call(&worker, ft.id().clone(), "storage_deposit".into())
+        .with_args(json!({}).to_string().into_bytes())
+        .with_deposit(1250000000000000000000)
+        .transact()
+        .await?;
 
-    // let outcome = worker
-    //     .call(
-    //         &contract,
-    //         "new".to_string(),
-    //         json!({})
-    //         .to_string()
-    //         .into_bytes(),
-    //         None,
-    //     )
-    //     .await?;
+    let bal1 = worker
+        .view(
+            ft.id().clone(),
+            "ft_balance_of".to_string(),
+            json!({"account_id":agent.id().to_string()})
+                .to_string()
+                .into_bytes(),
+        )
+        .await?;
+    let balance_1: U128 = serde_json::from_str(&bal1).expect("No result method");
+    assert_eq!(balance_1.0, 0, "Invalid FT Balance");
 
-    // println!("new_default: {:#?}", outcome);
+    ft.call(&worker, "ft_transfer".into())
+        .with_args(
+            json!({
+                "receiver_id": agent.id().to_string(),
+                "amount": "1000",
+            })
+            .to_string()
+            .into_bytes(),
+        )
+        .with_deposit(1)
+        .transact()
+        .await?;
 
-    // let result = worker
-    //     .view(
-    //         contract.id().clone(),
-    //         "version".to_string(),
-    //         Vec::new(),
-    //     )
-    //     .await?;
-
-    // println!(
-    //     "--------------\n{}",
-    //     serde_json::to_string_pretty(&result).unwrap()
-    // );
-
-    // println!("Dev Account ID: {}", contract.id());
+    let bal2 = worker
+        .view(
+            ft.id().clone(),
+            "ft_balance_of".to_string(),
+            json!({"account_id":agent.id().to_string()})
+                .to_string()
+                .into_bytes(),
+        )
+        .await?;
+    let balance_2: U128 = serde_json::from_str(&bal2).expect("No result method");
+    assert_eq!(balance_2.0, 1000, "Invalid FT Balance");
 
     Ok(())
 }
