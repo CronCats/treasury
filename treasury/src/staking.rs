@@ -1,5 +1,9 @@
 use crate::*;
 
+use near_sdk::BlockHeight;
+use utils::{assert_owner};
+
+/// Amount of blocks needed before withdraw is available
 pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_UNSTAKE: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_WITHDRAW_ALL: Gas = Gas(10_000_000_000_000);
@@ -10,40 +14,35 @@ pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = Gas(10_000_000_000_000);
 pub const GAS_YIELD_HARVEST: Gas = Gas(10_000_000_000_000);
 
-#[derive(Deserialize)]
+/// Stake Buckets keep track of staked amounts per-pool
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
 #[serde(crate = "near_sdk::serde")]
-pub struct PoolBalance {
-    pub account_id: AccountId,
-    pub unstaked_balance: U128,
-    pub staked_balance: U128,
-    pub can_withdraw: bool,
+pub struct StakeDelegation {
+    /// The starting balance, to compute future gains
+    pub init_balance: Balance,
+    /// non-realtime balance, updated by CALLs, useful in some scenarios
+    pub balance: Balance,
+    /// To keep track of how long at stake
+    pub start_block: BlockHeight,
+    /// To keep track of when withdraw is available for stake
+    pub withdraw_ts: Option<u64>,
+    /// For computing how much is available for withdraw upon ready
+    pub withdraw_balance: Option<Balance>,
+    /// Some providers have diff implementations
+    pub withdraw_function: String,
+    /// For enabling short term staking
+    pub liquid_unstake_function: Option<String>,
+    /// For enabling yield from harvesting solutions (EX: Metapool $META)
+    pub yield_function: Option<String>,
 }
 
-/// REF: https://github.com/Narwallets/meta-pool/blob/master/metapool/src/types.rs#L117
-#[derive(Deserialize)]
-#[serde(crate = "near_sdk::serde")]
-pub struct MetaPoolBalance {
-    pub account_id: AccountId,
-    pub available: U128,
-    pub st_near: U128,
-    pub valued_st_near: U128, // st_near * stNEAR_price
-    pub meta: U128,
-    pub realized_meta: U128,
-    pub unstaked: U128,
-    pub unstaked_requested_unlock_epoch: U64,
-    pub unstake_full_epochs_wait_left: u16,
-    pub can_withdraw: bool,
-    pub total: U128,
-    pub trip_start: U64,
-    pub trip_start_stnear: U128,
-    pub trip_accum_stakes: U128,
-    pub trip_accum_unstakes: U128,
-    pub trip_rewards: U128,
-    pub nslp_shares: U128,
-    pub nslp_share_value: U128,
-    pub nslp_share_bp: u16,
-}
-
+// TODO:
+// 1. check threshold
+// 2. trigger check threshold upon balance change
+// 3. stake more: 1 or many?
+// 4. unstake: 1 or many?
+// 5. withdraw: Schedule then execute, immediate
+// - Change some fns to be allowed to be called by approved accounts (owners or croncat)
 #[near_bindgen]
 impl Contract {
     /// Manage which pools can get used
@@ -54,25 +53,29 @@ impl Contract {
     pub fn add_staking_pool(
         &mut self,
         pool_account_id: AccountId,
-        // So if a pool has harvesting abilities, you can provide here. Examples: MetaPool: harvest_meta, CheddarFarm: withdraw_crop
+        // If a pool has liquid staking abilities, you can provide here. Examples: MetaPool: liquid_unstake
+        liquid_unstake_function: Option<String>,
+        // If a pool has harvesting abilities, you can provide here. Examples: MetaPool: harvest_meta, CheddarFarm: withdraw_crop
         yield_function: Option<String>,
+        // IF the withdraw function is different than standard
+        withdraw_function: Option<String>,
     ) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        let current_pool = self.stake_pools.get(&pool_account_id);
+        assert_owner(&self.owner_id);
+        let current_pool = self.stake_delegations.get(&pool_account_id);
 
         // Insert ONLY if there isn't a record of this pool already
-        // NOTE: Only managing the stake_pools, as stake_pending_pools is used for active balance movements
+        // NOTE: Only managing the stake_delegations, as stake_pending_delegations is used for active balance movements
         assert!(current_pool.is_none(), "Stake pool exists already");
-        self.stake_pools.insert(&pool_account_id, &0);
-
-        if let Some(yield_function) = yield_function {
-            self.yield_functions
-                .insert(&pool_account_id, &yield_function);
-        }
+        self.stake_delegations.insert(&pool_account_id, &StakeDelegation {
+            init_balance: 0,
+            balance: 0,
+            start_block: 0, // 0 indicates that the staking has not started yet
+            withdraw_ts: None,
+            withdraw_balance: None,
+            withdraw_function: withdraw_function.unwrap_or("withdraw_all".to_string()),
+            liquid_unstake_function,
+            yield_function,
+        });
     }
 
     /// Remove a pool, if all balances have been withdrawn
@@ -81,19 +84,14 @@ impl Contract {
     /// near call treasury.testnet remove_staking_pool '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn remove_staking_pool(&mut self, pool_account_id: AccountId) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        let current_pool = self.stake_pools.get(&pool_account_id);
+        assert_owner(&self.owner_id);
+        let current_pool = self.stake_delegations.get(&pool_account_id);
 
         // Insert ONLY if there isn't a record of this pool already
-        // NOTE: Only managing the stake_pools, as stake_pending_pools is used for active balance movements
+        // NOTE: Only managing the stake_delegations, as stake_pending_delegations is used for active balance movements
         assert!(current_pool.is_some(), "Stake pool doesnt exist");
-        assert_eq!(current_pool.unwrap(), 0, "Stake pool has a balance");
-        self.stake_pools.remove(&pool_account_id);
-        self.yield_functions.remove(&pool_account_id);
+        assert_eq!(current_pool.unwrap().balance, 0, "Stake pool has a balance");
+        self.stake_delegations.remove(&pool_account_id);
     }
 
     /// Send NEAR to a staking pool and stake.
@@ -113,20 +111,16 @@ impl Contract {
     /// ```
     #[payable]
     pub fn deposit_and_stake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
+        assert_owner(&self.owner_id);
         let mut stake_amount: Balance = 0;
-        let pool_balance = self.stake_pools.get(&pool_account_id);
-        assert!(pool_balance.is_some(), "Stake pool doesnt exist");
+        let pool_delegation = self.stake_delegations.get(&pool_account_id);
+        assert!(pool_delegation.is_some(), "Stake delegation doesnt exist");
 
         if env::attached_deposit() > 0 {
             stake_amount = env::attached_deposit();
         } else {
             assert!(
-                env::account_balance() > STAKE_BALANCE_MIN,
+                u128::from(env::account_balance()).saturating_sub(amount.unwrap_or(0)) > MIN_BALANCE_FOR_STORAGE,
                 "Account Balance Under Minimum Balance"
             );
             if let Some(amount) = amount {
@@ -137,9 +131,21 @@ impl Contract {
         // Stop if somehow we made it this far and have nothing to stake... RUDE
         assert_ne!(stake_amount, 0, "Nothing to stake");
 
+        let delegation = pool_delegation.unwrap();
+        let updated_delegation = StakeDelegation {
+            init_balance: stake_amount,
+            balance: stake_amount,
+            start_block: env::block_height(),
+            withdraw_ts: None,
+            withdraw_balance: None,
+            withdraw_function: delegation.withdraw_function,
+            liquid_unstake_function: delegation.liquid_unstake_function,
+            yield_function: delegation.yield_function,
+        };
+
         // Update our local balance values, so we can keep track if we're using the pool (but not caring about interest earned)
-        self.stake_pools
-            .insert(&pool_account_id, &(pool_balance.unwrap() + stake_amount));
+        self.stake_delegations
+            .insert(&pool_account_id, &updated_delegation);
 
         // Lastly, make the cross-contract call to DO the staking :D
         let p = env::promise_create(
@@ -153,92 +159,16 @@ impl Contract {
         env::promise_return(p);
     }
 
-    /// Unstake from a pool, works in metapool and traditional validator pools
-    /// TODO: Consider amount optional, and setup a way to get current balance to signal unstake of ALL
-    ///
-    /// ```bash
-    /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
-    /// ```
-    pub fn unstake(&mut self, pool_account_id: AccountId, amount: Balance) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        let pool_balance = self.stake_pools.get(&pool_account_id);
-        assert!(pool_balance.is_some(), "Stake pool doesnt exist");
-
-        // Stop if somehow we made it this far and have nothing to stake... RUDE
-        assert_ne!(amount, 0, "Nothing to stake");
-
-        // Update our local balance values, so we know whats in process of long-form unstaking
-        // TODO: Consider storing a timestamp here, so we know WHEN to revisit and withdraw
-        self.stake_pending_pools.insert(&pool_account_id, &amount);
-
-        // Lastly, make the cross-contract call to DO the unstaking :D
-        let p = env::promise_create(
-            pool_account_id,
-            "unstake",
-            json!({
-                "amount": amount,
-            })
-            .to_string()
-            .as_bytes(),
-            NO_DEPOSIT,
-            GAS_STAKE_UNSTAKE,
-        );
-
-        env::promise_return(p);
-    }
-
-    /// Unstake from a pool, works in metapool and traditional validator pools
-    ///
-    /// ```bash
-    /// near call treasury.testnet withdraw_all '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
-    /// ```
-    pub fn withdraw_all(&mut self, pool_account_id: AccountId) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        let pending_pool_balance = self
-            .stake_pending_pools
-            .get(&pool_account_id)
-            .expect("Withdraw pool doesnt exist");
-        let pool_balance = self
-            .stake_pending_pools
-            .get(&pool_account_id)
-            .expect("Stake pool doesnt exist");
-
-        // Clear the pending amount, update main pool amount
-        self.stake_pending_pools.remove(&pool_account_id);
-        self.stake_pools.insert(
-            &pool_account_id,
-            &(pool_balance.saturating_sub(pending_pool_balance)),
-        );
-
-        // Lastly, make the cross-contract call to DO the withdraw :D
-        let p = env::promise_create(
-            pool_account_id,
-            "withdraw_all",
-            json!({}).to_string().as_bytes(),
-            NO_DEPOSIT,
-            GAS_STAKE_WITHDRAW_ALL,
-        );
-
-        env::promise_return(p);
-    }
-
     /// Get the staked balance from a pool for THIS account
+    /// NOTE: This is a CALL because it updates internal balances
     ///
     /// ```bash
     /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
     pub fn get_staked_balance(&mut self, pool_account_id: AccountId) {
         assert!(
-            self.stake_pools.get(&pool_account_id).is_some(),
-            "Pool doesnt exist"
+            self.stake_delegations.get(&pool_account_id).is_some(),
+            "Delegation doesnt exist"
         );
 
         // make the cross-contract call to get the balance
@@ -271,6 +201,12 @@ impl Contract {
     }
 
     /// CALLBACK for get_staked_balance
+    /// Returns:
+    /// (
+    /// staked balance,
+    /// unstaking balance,
+    /// can withdraw,
+    /// )
     #[private]
     pub fn callback_get_staked_balance(
         &mut self,
@@ -289,14 +225,25 @@ impl Contract {
             }
             PromiseResult::Successful(result) => {
                 // Attempt to parse the returned balance amount
-                let pool_balance: PoolBalance = serde_json::de::from_slice(&result)
-                    .expect("Could not get balance from stake pool");
+                let pool_balance: external::PoolBalance = serde_json::de::from_slice(&result)
+                    .expect("Could not get balance from stake delegation");
+                let mut delegation = self.stake_delegations.get(&pool_account_id).expect("No delegation found");
+
+                // Update internal balances
+                delegation.balance = pool_balance.staked_balance.0;
+                delegation.withdraw_balance = Some(pool_balance.unstaked_balance.0);
+
+                // If its known, immediately make withdraw available, otherwise compute when withdraw is available
+                if pool_balance.can_withdraw {
+                    let unstake_duration: u64 = utils::get_epoch_withdrawal_time(None);
+                    delegation.withdraw_ts = Some(env::block_timestamp().saturating_sub(unstake_duration * 1_000_000));
+                }
 
                 // Update the balances of pool
-                self.stake_pools
-                    .insert(&pool_account_id, &pool_balance.staked_balance.0);
-                self.stake_pending_pools
-                    .insert(&pool_account_id, &pool_balance.unstaked_balance.0);
+                self.stake_delegations
+                    .insert(&pool_account_id, &delegation);
+                self.stake_pending_delegations
+                    .insert(&pool_account_id, &delegation);
                 (
                     pool_balance.staked_balance.0,
                     pool_balance.unstaked_balance.0,
@@ -307,33 +254,83 @@ impl Contract {
         }
     }
 
-    /// Execute a yield harvest for staking pools that support it.
+    /// Unstake from a pool, works in metapool and traditional validator pools
+    /// NOTE: Unstaking here will schedule the automatic withdrawal in future epoch
     ///
     /// ```bash
-    /// near call treasury.testnet yield_harvest '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
+    /// 
+    /// OR, to unstake ALL:
+    /// 
+    /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
-    pub fn yield_harvest(&mut self, pool_account_id: AccountId) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        assert!(
-            self.stake_pending_pools.get(&pool_account_id).is_some(),
-            "Stake pool doesnt exist"
-        );
-        let yield_function = self
-            .yield_functions
-            .get(&pool_account_id)
-            .expect("Yield function doesnt exist");
+    pub fn unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+        assert_owner(&self.owner_id);
+        let pool_delegation = self.stake_delegations.get(&pool_account_id);
+        assert!(pool_delegation.is_some(), "Stake delegation doesnt exist");
+        let mut unstake_function = "unstake_all";
 
-        // Make a yield harvest call, including yocto since most include FT that needs txns with priveledges
+        // Stop if somehow we made it this far and have nothing to unstake... RUDE
+        if amount.is_some() {
+            assert_ne!(amount.unwrap(), 0, "Nothing to unstake");
+            unstake_function = "unstake";
+        }
+
+        // Update our local balance values, so we know whats in process of long-form unstaking
+        let mut delegation = pool_delegation.unwrap();
+        let withdraw_balance = amount.unwrap_or(0);
+        delegation.withdraw_ts = Some(env::block_timestamp());
+        delegation.withdraw_balance = Some(withdraw_balance);
+        self.stake_pending_delegations.insert(&pool_account_id, &delegation);
+
+        // Lastly, make the cross-contract call to DO the unstaking :D
         let p = env::promise_create(
             pool_account_id,
-            &yield_function,
+            &unstake_function,
+            json!({
+                "amount": amount,
+            })
+            .to_string()
+            .as_bytes(),
+            NO_DEPOSIT,
+            GAS_STAKE_UNSTAKE,
+        );
+
+        // TODO: Add withdraw scheduler
+
+        env::promise_return(p);
+    }
+
+    /// Withdraw unstaked balance from a pool, works in metapool and traditional validator pools
+    ///
+    /// ```bash
+    /// near call treasury.testnet withdraw_all '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// ```
+    pub fn withdraw_all(&mut self, pool_account_id: AccountId) {
+        assert_owner(&self.owner_id);
+        let pending_pool_delegation = self
+            .stake_pending_delegations
+            .get(&pool_account_id)
+            .expect("Withdraw delegation doesnt exist");
+        let mut pool_delegation = self
+            .stake_delegations
+            .get(&pool_account_id)
+            .expect("Stake delegation doesnt exist");
+
+        // Clear the pending amount, update main pool amount
+        // NOTE: would be great to do this on a callback, but seems withdraw functions dont provide how much was withdrawn on response
+        // NOTE: Could try getting current account balance and balance after callback, however it doesnt work if this is used for FT staking
+        pool_delegation.balance = pool_delegation.balance.saturating_sub(pending_pool_delegation.withdraw_balance.unwrap_or(0));
+        self.stake_pending_delegations.remove(&pool_account_id);
+        self.stake_delegations.insert(&pool_account_id, &pool_delegation);
+
+        // Lastly, make the cross-contract call to DO the withdraw :D
+        let p = env::promise_create(
+            pool_account_id,
+            &pool_delegation.withdraw_function,
             json!({}).to_string().as_bytes(),
-            ONE_YOCTO,
-            GAS_YIELD_HARVEST,
+            NO_DEPOSIT,
+            GAS_STAKE_WITHDRAW_ALL,
         );
 
         env::promise_return(p);
@@ -345,9 +342,13 @@ impl Contract {
     /// near call treasury.testnet liquid_unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
     pub fn liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+        assert_owner(&self.owner_id);
+        let delegated_stake = self.stake_delegations.get(&pool_account_id);
+        assert!(delegated_stake.is_some(), "Delegation doesnt exist");
+        let delegation = delegated_stake.unwrap();
         assert!(
-            self.stake_pools.get(&pool_account_id).is_some(),
-            "Pool doesnt exist"
+            delegation.liquid_unstake_function.is_some(),
+            "Liquid unstake unsupported for this pool"
         );
 
         // First check if there are any staked balances
@@ -383,11 +384,7 @@ impl Contract {
     /// CALLBACK for get_staked_balance
     #[private]
     pub fn callback_liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        assert_eq!(
-            env::promise_results_count(),
-            1,
-            "Expected 1 promise result."
-        );
+        utils::is_promise_success();
 
         // Return balance or 0
         match env::promise_result(0) {
@@ -396,7 +393,7 @@ impl Contract {
             }
             PromiseResult::Successful(result) => {
                 // Attempt to parse the returned account balances
-                let pool_balance: MetaPoolBalance = serde_json::de::from_slice(&result)
+                let pool_balance: external::MetaPoolBalance = serde_json::de::from_slice(&result)
                     .expect("Could not get balance from stake pool");
 
                 // Double check values before going forward
@@ -422,9 +419,10 @@ impl Contract {
 
                 // We have some balances, attempt to unstake
                 // TODO: No fee was calculated, does that cause issues on min_expected_near?
+                let delegation = self.stake_delegations.get(&pool_account_id).expect("Delegation doesnt exist");
                 let p1 = env::promise_create(
                     pool_account_id.clone(),
-                    "liquid_unstake",
+                    &delegation.liquid_unstake_function.unwrap(),
                     json!({
                         "st_near_to_burn": st_near_to_burn,
                         "min_expected_near": min_expected_near,
@@ -438,8 +436,35 @@ impl Contract {
                 env::promise_return(p1);
             }
             PromiseResult::Failed => {
-                //
+                // Fail me not, please
             }
         }
+    }
+
+    /// Execute a yield harvest for staking pools that support it.
+    ///
+    /// ```bash
+    /// near call treasury.testnet yield_harvest '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// ```
+    pub fn yield_harvest(&mut self, pool_account_id: AccountId) {
+        assert_owner(&self.owner_id);
+        let delegated_stake = self.stake_delegations.get(&pool_account_id);
+        assert!(delegated_stake.is_some(), "Delegation doesnt exist");
+        let delegation = delegated_stake.unwrap();
+        assert!(
+            delegation.yield_function.is_some(),
+            "Yield unsupported for this pool"
+        );
+
+        // Make a yield harvest call, including yocto since most include FT that needs txns with priveledges
+        let p = env::promise_create(
+            pool_account_id,
+            &delegation.yield_function.unwrap(),
+            json!({}).to_string().as_bytes(),
+            ONE_YOCTO,
+            GAS_YIELD_HARVEST,
+        );
+
+        env::promise_return(p);
     }
 }

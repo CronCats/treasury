@@ -1,34 +1,25 @@
+use near_sdk::{env, PromiseResult};
 use crate::*;
 
-#[near_bindgen]
-impl Contract {
-    // NOTE: For large state transitions, needs to be able to migrate over paginated sets?
-    /// Migrate State
-    /// Safely upgrade contract storage
-    ///
-    /// ```bash
-    /// near call cron.testnet migrate_state --accountId cron.testnet
-    /// ```
-    #[init(ignore_state)]
-    pub fn migrate_state() -> Self {
-        // Deserialize the state using the old contract structure.
-        let old_contract: Contract = env::state_read().expect("Old state doesn't exist");
-        // Verify that the migration can only be done by the owner.
-        // This is not necessary, if the upgrade is done internally.
-        assert_eq!(
-            &env::predecessor_account_id(),
-            &old_contract.owner_id,
-            "Can only be called by the owner"
-        );
+pub const EPOCH_LENGTH: u64 = 43_200;
 
-        // Create the new contract using the data from the old contract.
-        // Contract { owner_id: old_contract.owner_id, data: old_contract.data, new_data }
-        Contract {
-            paused: false,
-            owner_id: old_contract.owner_id,
-        }
+pub fn assert_owner(owner_id: &AccountId) {
+    assert_eq!(owner_id, &env::predecessor_account_id(), "Must be owner");
+}
+
+pub fn is_promise_success() -> bool {
+    assert_eq!(
+        env::promise_results_count(),
+        1,
+        "Contract expected a result on the callback"
+    );
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => true,
+        _ => false,
     }
+}
 
-    // TODO: Add a generic proxy, so future actions do not require custom integrations.
-    // TODO: Could re-use the generic setup for approvals in multisig setup
+pub fn get_epoch_withdrawal_time(epochs: Option<u64>) -> u64 {
+    let epoch_multiple: u64 = epochs.unwrap_or(6); // default 72 hours
+    epoch_multiple.saturating_mul(EPOCH_LENGTH)
 }
