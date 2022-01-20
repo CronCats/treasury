@@ -48,8 +48,8 @@ pub struct CroncatTask {
     pub arguments: Vec<u8>,
 }
 
-#[ext_contract(ext_croncat)]
-pub trait ExtCroncat {
+#[ext_contract(croncat)]
+pub trait Croncat {
     fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128);
     fn get_tasks(
         &self,

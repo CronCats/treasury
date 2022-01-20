@@ -6,13 +6,14 @@ use utils::{assert_owner};
 /// Amount of blocks needed before withdraw is available
 pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_UNSTAKE: Gas = Gas(10_000_000_000_000);
-pub const GAS_STAKE_WITHDRAW_ALL: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_WITHDRAW_ALL: Gas = Gas(40_000_000_000_000);
 pub const GAS_STAKE_GET_STAKE_BALANCE: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_GET_STAKE_BALANCE_CALLBACK: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_LIQUID_UNSTAKE_VIEW: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = Gas(10_000_000_000_000);
 pub const GAS_YIELD_HARVEST: Gas = Gas(10_000_000_000_000);
+pub const GAS_CRONCAT_CREATE_TASK: Gas = Gas(30_000_000_000_000);
 
 /// Stake Buckets keep track of staked amounts per-pool
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
@@ -34,6 +35,18 @@ pub struct StakeDelegation {
     pub liquid_unstake_function: Option<String>,
     /// For enabling yield from harvesting solutions (EX: Metapool $META)
     pub yield_function: Option<String>,
+}
+
+/// Stake Buckets keep track of staked amounts per-pool
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
+#[serde(crate = "near_sdk::serde")]
+pub struct StakeThreshold {
+    pub liquid: u64,
+    pub staked: u64,
+    pub deviation: u64,
+    pub extreme_deviation: u64,
+    pub eval_period: u128,    // Decide on time delay, in seconds
+    pub eval_cadence: String, // OR cron cadence
 }
 
 // TODO:
@@ -92,6 +105,24 @@ impl Contract {
         assert!(current_pool.is_some(), "Stake pool doesnt exist");
         assert_eq!(current_pool.unwrap().balance, 0, "Stake pool has a balance");
         self.stake_delegations.remove(&pool_account_id);
+    }
+
+    /// Check staking threshold for eval
+    /// Logic:
+    /// - Checks if current balance is above defined threshold (Example if account total balance is 100 near, liquid 40 with a setting of staking 80%, go ahead and stake)
+    /// - If threshold is out of proportion, trigger one of the following:
+    ///     - Stake: If above threshold
+    ///     - UnStake: If below threshold
+    ///     - Liquid UnStake: If below extreme threshold
+    /// 
+    /// ```bash
+    /// near call treasury.testnet auto_stake --accountId manager_v1.croncat.testnet
+    /// ```
+    pub fn auto_stake(&mut self) {
+        // TODO: Adjust as needed:
+        // stake_threshold_percentage: 3000,              // 30%
+        // stake_eval_period: 86400,                      // Daily eval delay, in seconds
+        // stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
     }
 
     /// Send NEAR to a staking pool and stake.
@@ -296,7 +327,22 @@ impl Contract {
             GAS_STAKE_UNSTAKE,
         );
 
-        // TODO: Add withdraw scheduler
+        // Add withdraw scheduler, if croncat is configured
+        if self.croncat_id.is_some() {
+            external::croncat::create_task(
+                env::current_account_id().to_string(),
+                "withdraw_all".to_string(),
+                // TODO: what cadence is needed here? (this sets it to every sunday at minute 0), ideally can set a block height start
+                "0 0 * * 0 *".to_string(),
+                Some(false),
+                Some(U128::from(NO_DEPOSIT)),
+                Some(GAS_STAKE_WITHDRAW_ALL + GAS_CRONCAT_CREATE_TASK), // 70 Tgas
+                None,
+                self.croncat_id.clone().unwrap(),
+                env::attached_deposit(),
+                GAS_CRONCAT_CREATE_TASK,
+            );
+        }
 
         env::promise_return(p);
     }

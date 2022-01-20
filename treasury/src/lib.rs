@@ -1,18 +1,8 @@
-use near_sdk::{
-    borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{UnorderedMap},
-    env, ext_contract,
-    json_types::{U128, U64, Base64VecU8},
-    log, near_bindgen,
-    serde::{Deserialize, Serialize},
-    serde_json,
-    serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
-};
+use near_sdk::{AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult, borsh::{self, BorshDeserialize, BorshSerialize}, collections::{TreeMap, UnorderedMap}, env, ext_contract, json_types::{U128, U64, Base64VecU8}, log, near_bindgen, serde::{Deserialize, Serialize}, serde_json, serde_json::json};
 
 mod owner;
 mod utils;
-mod types;
+mod actions;
 mod external;
 mod staking;
 mod views;
@@ -20,7 +10,8 @@ mod views;
 mod ft_impl;
 mod nft_impl;
 
-use staking::StakeDelegation;
+use actions::ActionType;
+use staking::{StakeDelegation, StakeThreshold};
 
 // Balance & Fee Definitions
 pub const NO_DEPOSIT: Balance = 0;
@@ -36,6 +27,8 @@ pub const MIN_BALANCE_FOR_STORAGE: u128 = 20 * ONE_NEAR;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
+    ActionsCadence,
+    ActionsTimeout,
     FungibleTokenBalances,
     NonFungibleTokenHoldings,
     StakePools,
@@ -49,16 +42,20 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId, // single or DAO entity
-    // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
+    // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance, can be DAO or members
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
+
+    // Croncat Scheduling Config
+    croncat_id: Option<AccountId>,
+    cadence_actions: UnorderedMap<String, Vec<ActionType>>, // recurring items, using croncat cadence
+    timeout_actions: TreeMap<u64, Vec<ActionType>>, // single trigger items, using croncat trigger upon a timeout/future timestamp
 
     // Token Standards
     ft_balances: UnorderedMap<AccountId, u128>,
     nft_holdings: UnorderedMap<AccountId, Vec<String>>,
 
-    stake_threshold_percentage: u128,
-    stake_eval_period: u128,    // Decide on time delay, in seconds
-    stake_eval_cadence: String, // OR cron cadence
+    // Staking
+    stake_threshold: StakeThreshold,
     stake_delegations: UnorderedMap<AccountId, StakeDelegation>, // for near staking, can be metapool, or other pools directly
     stake_pending_delegations: UnorderedMap<AccountId, StakeDelegation>, // for withdraw near staking
 
@@ -82,9 +79,18 @@ impl Contract {
             owner_id: env::signer_account_id(),
             ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             nft_holdings: UnorderedMap::new(StorageKeys::NonFungibleTokenHoldings),
-            stake_threshold_percentage: 3000,              // 30%
-            stake_eval_period: 86400,                      // Daily eval delay, in seconds
-            stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
+            croncat_id: None,
+            cadence_actions: UnorderedMap::new(StorageKeys::ActionsCadence),
+            timeout_actions: TreeMap::new(StorageKeys::ActionsTimeout),
+            stake_threshold: StakeThreshold {
+                // TODO: Adjust to better defaults
+                liquid: 3000, // 30%
+                staked: 7000, // 70%
+                deviation: 500, // 5%
+                extreme_deviation: 1500, // 15%
+                eval_period: 3600,    // Decide on time delay, in seconds
+                eval_cadence: "0 0 * * * *".to_string(), // OR cron cadence
+            },
             stake_delegations: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
             stake_pending_delegations: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
             // yield_functions: LookupMap::new(StorageKeys::YieldFunctions),

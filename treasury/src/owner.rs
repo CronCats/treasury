@@ -12,6 +12,7 @@ impl Contract {
     pub fn update_settings(
         &mut self,
         owner_id: Option<AccountId>,
+        croncat_id: Option<AccountId>,
         stake_threshold_percentage: Option<U128>,
         stake_eval_period: Option<U128>,
         stake_eval_cadence: Option<String>,
@@ -25,6 +26,9 @@ impl Contract {
         // BE CAREFUL!
         if let Some(owner_id) = owner_id {
             self.owner_id = owner_id;
+        }
+        if let Some(croncat_id) = croncat_id {
+            self.croncat_id = Some(croncat_id);
         }
 
         // Staking Settings
