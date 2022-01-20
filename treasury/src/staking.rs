@@ -1,7 +1,7 @@
 use crate::*;
 
 use near_sdk::BlockHeight;
-use utils::{assert_owner};
+use utils::assert_owner;
 
 /// Amount of blocks needed before withdraw is available
 pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
@@ -41,12 +41,13 @@ pub struct StakeDelegation {
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
 #[serde(crate = "near_sdk::serde")]
 pub struct StakeThreshold {
-    pub liquid: u64,
-    pub staked: u64,
-    pub deviation: u64,
-    pub extreme_deviation: u64,
-    pub eval_period: u128,    // Decide on time delay, in seconds
-    pub eval_cadence: String, // OR cron cadence
+    pub denominator: u64,       // default 100
+    pub liquid: u64,            // default 30%
+    pub staked: u64,            // default 70%
+    pub deviation: u64,         // default 5%
+    pub extreme_deviation: u64, // default 15%
+    pub eval_period: u128,      // Decide on time delay, in seconds
+    pub eval_cadence: String,   // OR cron cadence
 }
 
 // TODO:
@@ -79,16 +80,19 @@ impl Contract {
         // Insert ONLY if there isn't a record of this pool already
         // NOTE: Only managing the stake_delegations, as stake_pending_delegations is used for active balance movements
         assert!(current_pool.is_none(), "Stake pool exists already");
-        self.stake_delegations.insert(&pool_account_id, &StakeDelegation {
-            init_balance: 0,
-            balance: 0,
-            start_block: 0, // 0 indicates that the staking has not started yet
-            withdraw_ts: None,
-            withdraw_balance: None,
-            withdraw_function: withdraw_function.unwrap_or("withdraw_all".to_string()),
-            liquid_unstake_function,
-            yield_function,
-        });
+        self.stake_delegations.insert(
+            &pool_account_id,
+            &StakeDelegation {
+                init_balance: 0,
+                balance: 0,
+                start_block: 0, // 0 indicates that the staking has not started yet
+                withdraw_ts: None,
+                withdraw_balance: None,
+                withdraw_function: withdraw_function.unwrap_or("withdraw_all".to_string()),
+                liquid_unstake_function,
+                yield_function,
+            },
+        );
     }
 
     /// Remove a pool, if all balances have been withdrawn
@@ -107,6 +111,78 @@ impl Contract {
         self.stake_delegations.remove(&pool_account_id);
     }
 
+    /// Check staking threshold to find if an auto_stake rebalance should occur
+    ///
+    /// ```bash
+    /// near view treasury.testnet needs_stake_rebalance --accountId manager_v1.croncat.testnet
+    /// ```
+    pub fn needs_stake_rebalance(&self) -> (bool, u128, u128, u128, u128) {
+        let threshold = self.stake_threshold;
+        let current_balance = env::account_balance();
+        let mut total_balance: Balance = 0;
+        let mut staked_balance: Balance = 0;
+        let mut unstaking_balance: Balance = 0;
+
+        // get total staked balance
+        for (_, stake) in self.stake_delegations.iter() {
+            staked_balance = staked_balance.saturating_add(stake.balance);
+        }
+        // get total unstaking balance
+        for (_, unstake) in self.stake_pending_delegations.iter() {
+            unstaking_balance =
+                unstaking_balance.saturating_add(unstake.withdraw_balance.unwrap_or(0));
+        }
+
+        // update total balance, so we can check thresholds
+        // TODO: Check if taking unstaking balance into consideration is a bad idea realistically
+        total_balance =
+            current_balance.saturating_add(staked_balance.saturating_add(unstaking_balance));
+
+        // Compute threshold values
+        let liquid_ideal: u128 =
+            utils::calc_percent(threshold.liquid, threshold.denominator, total_balance);
+        let liquid_actual: u128 = utils::calc_percent(1, threshold.denominator, current_balance);
+        let liquid_deviation: u128 =
+            utils::calc_percent(threshold.deviation, threshold.denominator, total_balance);
+        let liquid_extreme_deviation: u128 = utils::calc_percent(
+            threshold.extreme_deviation,
+            threshold.denominator,
+            total_balance,
+        );
+
+        // Check if liquid balance is above threshold deviation
+        if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
+            return (
+                true,
+                liquid_actual,
+                liquid_ideal,
+                liquid_deviation,
+                liquid_extreme_deviation,
+            );
+        }
+
+        // Check if liquid balance is below threshold deviation
+        if (liquid_actual < liquid_ideal.saturating_sub(liquid_deviation))
+            || (liquid_actual < liquid_ideal.saturating_sub(liquid_extreme_deviation))
+        {
+            return (
+                true,
+                liquid_actual,
+                liquid_ideal,
+                liquid_deviation,
+                liquid_extreme_deviation,
+            );
+        }
+
+        return (
+            false,
+            liquid_actual,
+            liquid_ideal,
+            liquid_deviation,
+            liquid_extreme_deviation,
+        );
+    }
+
     /// Check staking threshold for eval
     /// Logic:
     /// - Checks if current balance is above defined threshold (Example if account total balance is 100 near, liquid 40 with a setting of staking 80%, go ahead and stake)
@@ -114,15 +190,64 @@ impl Contract {
     ///     - Stake: If above threshold
     ///     - UnStake: If below threshold
     ///     - Liquid UnStake: If below extreme threshold
-    /// 
+    ///
     /// ```bash
     /// near call treasury.testnet auto_stake --accountId manager_v1.croncat.testnet
     /// ```
     pub fn auto_stake(&mut self) {
-        // TODO: Adjust as needed:
-        // stake_threshold_percentage: 3000,              // 30%
-        // stake_eval_period: 86400,                      // Daily eval delay, in seconds
-        // stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
+        // Check if approved caller
+        assert!(
+            env::predecessor_account_id() == self.owner_id
+                || env::predecessor_account_id() == self.croncat_id.unwrap(),
+            "Not an approved caller"
+        );
+        let (
+            needs_rebalance,
+            liquid_actual,
+            liquid_ideal,
+            liquid_deviation,
+            liquid_extreme_deviation,
+        ) = self.needs_stake_rebalance();
+        if !needs_rebalance {
+            return;
+        }
+
+        // Get the staking pool(s) to do things
+        // NOTE: For simplicity, just going to get 1 pool
+        let pool_id = self
+            .stake_delegations
+            .keys()
+            .next()
+            .expect("No pool id found");
+
+        // Check if liquid balance is above threshold deviation
+        if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
+            // Time to restake some amount
+            self.deposit_and_stake(pool_id, Some(liquid_ideal.saturating_sub(liquid_actual)));
+        }
+
+        // Check if liquid balance is below threshold deviation
+        if liquid_actual < liquid_ideal.saturating_sub(liquid_deviation) {
+            // Time to unstake some amount
+            if liquid_actual < liquid_ideal.saturating_sub(liquid_extreme_deviation) {
+                let unstake_amount = Some(liquid_extreme_deviation.saturating_sub(liquid_actual));
+                let pool = self
+                    .stake_delegations
+                    .get(&pool_id)
+                    .expect("No delegation found for pool");
+                // If pool supports liquid unstaking, otherwise go to regular
+                if pool.liquid_unstake_function.is_some() {
+                    self.liquid_unstake(pool_id, unstake_amount);
+                } else {
+                    self.unstake(pool_id, unstake_amount);
+                }
+            } else {
+                self.unstake(
+                    pool_id,
+                    Some(liquid_extreme_deviation.saturating_sub(liquid_actual)),
+                );
+            }
+        }
     }
 
     /// Send NEAR to a staking pool and stake.
@@ -151,7 +276,8 @@ impl Contract {
             stake_amount = env::attached_deposit();
         } else {
             assert!(
-                u128::from(env::account_balance()).saturating_sub(amount.unwrap_or(0)) > MIN_BALANCE_FOR_STORAGE,
+                u128::from(env::account_balance()).saturating_sub(amount.unwrap_or(0))
+                    > MIN_BALANCE_FOR_STORAGE,
                 "Account Balance Under Minimum Balance"
             );
             if let Some(amount) = amount {
@@ -258,7 +384,10 @@ impl Contract {
                 // Attempt to parse the returned balance amount
                 let pool_balance: external::PoolBalance = serde_json::de::from_slice(&result)
                     .expect("Could not get balance from stake delegation");
-                let mut delegation = self.stake_delegations.get(&pool_account_id).expect("No delegation found");
+                let mut delegation = self
+                    .stake_delegations
+                    .get(&pool_account_id)
+                    .expect("No delegation found");
 
                 // Update internal balances
                 delegation.balance = pool_balance.staked_balance.0;
@@ -267,12 +396,12 @@ impl Contract {
                 // If its known, immediately make withdraw available, otherwise compute when withdraw is available
                 if pool_balance.can_withdraw {
                     let unstake_duration: u64 = utils::get_epoch_withdrawal_time(None);
-                    delegation.withdraw_ts = Some(env::block_timestamp().saturating_sub(unstake_duration * 1_000_000));
+                    delegation.withdraw_ts =
+                        Some(env::block_timestamp().saturating_sub(unstake_duration * 1_000_000));
                 }
 
                 // Update the balances of pool
-                self.stake_delegations
-                    .insert(&pool_account_id, &delegation);
+                self.stake_delegations.insert(&pool_account_id, &delegation);
                 self.stake_pending_delegations
                     .insert(&pool_account_id, &delegation);
                 (
@@ -290,9 +419,9 @@ impl Contract {
     ///
     /// ```bash
     /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
-    /// 
+    ///
     /// OR, to unstake ALL:
-    /// 
+    ///
     /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
@@ -312,7 +441,8 @@ impl Contract {
         let withdraw_balance = amount.unwrap_or(0);
         delegation.withdraw_ts = Some(env::block_timestamp());
         delegation.withdraw_balance = Some(withdraw_balance);
-        self.stake_pending_delegations.insert(&pool_account_id, &delegation);
+        self.stake_pending_delegations
+            .insert(&pool_account_id, &delegation);
 
         // Lastly, make the cross-contract call to DO the unstaking :D
         let p = env::promise_create(
@@ -366,9 +496,12 @@ impl Contract {
         // Clear the pending amount, update main pool amount
         // NOTE: would be great to do this on a callback, but seems withdraw functions dont provide how much was withdrawn on response
         // NOTE: Could try getting current account balance and balance after callback, however it doesnt work if this is used for FT staking
-        pool_delegation.balance = pool_delegation.balance.saturating_sub(pending_pool_delegation.withdraw_balance.unwrap_or(0));
+        pool_delegation.balance = pool_delegation
+            .balance
+            .saturating_sub(pending_pool_delegation.withdraw_balance.unwrap_or(0));
         self.stake_pending_delegations.remove(&pool_account_id);
-        self.stake_delegations.insert(&pool_account_id, &pool_delegation);
+        self.stake_delegations
+            .insert(&pool_account_id, &pool_delegation);
 
         // Lastly, make the cross-contract call to DO the withdraw :D
         let p = env::promise_create(
@@ -465,7 +598,10 @@ impl Contract {
 
                 // We have some balances, attempt to unstake
                 // TODO: No fee was calculated, does that cause issues on min_expected_near?
-                let delegation = self.stake_delegations.get(&pool_account_id).expect("Delegation doesnt exist");
+                let delegation = self
+                    .stake_delegations
+                    .get(&pool_account_id)
+                    .expect("Delegation doesnt exist");
                 let p1 = env::promise_create(
                     pool_account_id.clone(),
                     &delegation.liquid_unstake_function.unwrap(),

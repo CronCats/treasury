@@ -1,6 +1,6 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::json_types::{Base64VecU8, Base58CryptoHash, U128, U64};
-use near_sdk::{AccountId};
+use near_sdk::json_types::{Base58CryptoHash, Base64VecU8, U128, U64};
+use near_sdk::AccountId;
 
 use crate::*;
 
@@ -103,7 +103,7 @@ impl ActionType {
             ActionType::Transfer { .. } => "transfer",
             ActionType::Budget { .. } => "budget",
             ActionType::Swap { .. } => "swap",
-            ActionType::Harvest  { .. } => "harvest",
+            ActionType::Harvest { .. } => "harvest",
             ActionType::FunctionCall { .. } => "function_call",
             ActionType::UpgradeSelf { .. } => "upgrade_self",
             ActionType::UpgradeRemote { .. } => "upgrade_remote",
@@ -113,14 +113,10 @@ impl ActionType {
 
 impl Contract {
     // TODO:
-    pub fn add_allowed_action(&mut self, ) {
-        
-    }
+    pub fn add_allowed_action(&mut self) {}
 
     // TODO:
-    pub fn remove_allowed_action(&mut self, ) {
-        
-    }
+    pub fn remove_allowed_action(&mut self) {}
 
     // TODO:
     /// Returns set of roles that this user is member of permissions for given user across all the roles it's member of.
@@ -163,24 +159,16 @@ impl Contract {
     }
 
     // TODO:
-    pub fn create_action(&mut self, action: ActionType) {
-
-    }
+    pub fn create_action(&mut self, action: ActionType) {}
 
     // TODO:
-    pub fn remove_action(&mut self, action: ActionType) {
-
-    }
+    pub fn remove_action(&mut self, action: ActionType) {}
 
     // TODO:
-    pub fn get_action(&self, action_id: Base64VecU8) {
-
-    }
+    pub fn get_action(&self, action_id: Base64VecU8) {}
 
     // TODO:
-    pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {
-
-    }
+    pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
 
     // TODO:
     pub fn create_action_budget(&self, action: ActionType) {

@@ -1,10 +1,20 @@
-use near_sdk::{AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult, borsh::{self, BorshDeserialize, BorshSerialize}, collections::{TreeMap, UnorderedMap}, env, ext_contract, json_types::{U128, U64, Base64VecU8}, log, near_bindgen, serde::{Deserialize, Serialize}, serde_json, serde_json::json};
+use near_sdk::{
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    collections::{TreeMap, UnorderedMap},
+    env, ext_contract,
+    json_types::{Base64VecU8, U128, U256, U64},
+    log, near_bindgen,
+    serde::{Deserialize, Serialize},
+    serde_json,
+    serde_json::json,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
+};
 
-mod owner;
-mod utils;
 mod actions;
 mod external;
+mod owner;
 mod staking;
+mod utils;
 mod views;
 // mod storage_impl;
 mod ft_impl;
@@ -59,10 +69,10 @@ pub struct Contract {
     stake_delegations: UnorderedMap<AccountId, StakeDelegation>, // for near staking, can be metapool, or other pools directly
     stake_pending_delegations: UnorderedMap<AccountId, StakeDelegation>, // for withdraw near staking
 
-    // Yield harvesting
-    // yield_functions: LookupMap<AccountId, String>, // Storage
-                                                   // ft_storage_usage: StorageUsage,
-                                                   // nft_storage_usage: StorageUsage
+                                                                         // Yield harvesting
+                                                                         // yield_functions: LookupMap<AccountId, String>, // Storage
+                                                                         // ft_storage_usage: StorageUsage,
+                                                                         // nft_storage_usage: StorageUsage
 }
 
 #[near_bindgen]
@@ -83,17 +93,17 @@ impl Contract {
             cadence_actions: UnorderedMap::new(StorageKeys::ActionsCadence),
             timeout_actions: TreeMap::new(StorageKeys::ActionsTimeout),
             stake_threshold: StakeThreshold {
-                // TODO: Adjust to better defaults
-                liquid: 3000, // 30%
-                staked: 7000, // 70%
-                deviation: 500, // 5%
-                extreme_deviation: 1500, // 15%
-                eval_period: 3600,    // Decide on time delay, in seconds
+                denominator: 100,
+                liquid: 30,                              // 30%
+                staked: 70,                              // 70%
+                deviation: 5,                            // 5%
+                extreme_deviation: 15,                   // 15%
+                eval_period: 12 * 60 * 60 * 1000, // Decide on time delay, in seconds, default 12hrs
                 eval_cadence: "0 0 * * * *".to_string(), // OR cron cadence
             },
             stake_delegations: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
             stake_pending_delegations: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
-            // yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
+                                                                                          // yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
         }
     }
 }

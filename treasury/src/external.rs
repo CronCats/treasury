@@ -34,7 +34,6 @@ pub struct MetaPoolBalance {
     pub nslp_share_bp: u16,
 }
 
-
 /// CRONCAT
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
