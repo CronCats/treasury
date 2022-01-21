@@ -25,8 +25,8 @@ pub struct StakeDelegation {
     pub balance: Balance,
     /// To keep track of how long at stake
     pub start_block: BlockHeight,
-    /// To keep track of when withdraw is available for stake
-    pub withdraw_ts: Option<u64>,
+    /// To keep track of the epoch when withdraw is available from unstake
+    pub withdraw_epoch: Option<u64>,
     /// For computing how much is available for withdraw upon ready
     pub withdraw_balance: Option<Balance>,
     /// Some providers have diff implementations
@@ -51,11 +51,6 @@ pub struct StakeThreshold {
 }
 
 // TODO:
-// 1. check threshold
-// 2. trigger check threshold upon balance change
-// 3. stake more: 1 or many?
-// 4. unstake: 1 or many?
-// 5. withdraw: Schedule then execute, immediate
 // - Change some fns to be allowed to be called by approved accounts (owners or croncat)
 #[near_bindgen]
 impl Contract {
@@ -86,7 +81,7 @@ impl Contract {
                 init_balance: 0,
                 balance: 0,
                 start_block: 0, // 0 indicates that the staking has not started yet
-                withdraw_ts: None,
+                withdraw_epoch: None,
                 withdraw_balance: None,
                 withdraw_function: withdraw_function.unwrap_or("withdraw_all".to_string()),
                 liquid_unstake_function,
@@ -109,6 +104,75 @@ impl Contract {
         assert!(current_pool.is_some(), "Stake pool doesnt exist");
         assert_eq!(current_pool.unwrap().balance, 0, "Stake pool has a balance");
         self.stake_delegations.remove(&pool_account_id);
+    }
+
+    /// Returns all staking delegations
+    ///
+    /// ```bash
+    /// near view treasury.testnet get_delegations '{"from_index": 0, "limit": 10}'
+    /// ```
+    pub fn get_delegations(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<StakeDelegation> {
+        let mut ret: Vec<StakeDelegation> = Vec::new();
+        let mut start = 0;
+        let mut end = 10;
+        if let Some(from_index) = from_index {
+            start = from_index.0;
+        }
+        if let Some(limit) = limit {
+            end = u64::min(start + limit.0, self.stake_delegations.len());
+        }
+
+        // Return all data within range
+        let keys = self.stake_delegations.keys_as_vector();
+        for i in start..end {
+            if let Some(pool_account_id) = keys.get(i) {
+                if let Some(delegation) = self.stake_delegations.get(&pool_account_id) {
+                    let mut delegation_info = StakeDelegation {
+                        init_balance: delegation.init_balance,
+                        balance: delegation.balance,
+                        start_block: delegation.start_block,
+                        withdraw_epoch: delegation.withdraw_epoch,
+                        withdraw_balance: delegation.withdraw_balance,
+                        withdraw_function: delegation.withdraw_function,
+                        liquid_unstake_function: delegation.liquid_unstake_function,
+                        yield_function: delegation.yield_function,
+                    };
+
+                    // Adjust pending info if exists
+                    if let Some(pending_delegation) = self.stake_pending_delegations.get(&pool_account_id) {
+                        delegation_info.withdraw_epoch = pending_delegation.withdraw_epoch;
+                        delegation_info.withdraw_balance = pending_delegation.withdraw_balance;
+                    }
+
+                    ret.push(delegation_info);
+                }
+            }
+        }
+        ret
+    }
+
+    /// Returns all staking delegations
+    ///
+    /// ```bash
+    /// near view treasury.testnet has_delegation_to_withdraw
+    /// ```
+    pub fn has_delegation_to_withdraw(&self) -> (bool, Vec<AccountId>) {
+        let mut ret: Vec<AccountId> = Vec::new();
+        let mut has_withdraw = false;
+
+        // Return all data within range
+        let keys = self.stake_pending_delegations.keys_as_vector();
+        for pool_account_id in keys.iter() {
+            if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
+                // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
+                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height() && delegation.withdraw_balance.expect("No withdraw balance") > 0 {
+                    has_withdraw = true;
+                }
+
+                ret.push(pool_account_id);
+            }
+        }
+        (has_withdraw, ret)
     }
 
     /// Check staking threshold to find if an auto_stake rebalance should occur
@@ -293,7 +357,7 @@ impl Contract {
             init_balance: stake_amount,
             balance: stake_amount,
             start_block: env::block_height(),
-            withdraw_ts: None,
+            withdraw_epoch: None,
             withdraw_balance: None,
             withdraw_function: delegation.withdraw_function,
             liquid_unstake_function: delegation.liquid_unstake_function,
@@ -396,7 +460,7 @@ impl Contract {
                 // If its known, immediately make withdraw available, otherwise compute when withdraw is available
                 if pool_balance.can_withdraw {
                     let unstake_duration: u64 = utils::get_epoch_withdrawal_time(None);
-                    delegation.withdraw_ts =
+                    delegation.withdraw_epoch =
                         Some(env::block_timestamp().saturating_sub(unstake_duration * 1_000_000));
                 }
 
@@ -439,7 +503,7 @@ impl Contract {
         // Update our local balance values, so we know whats in process of long-form unstaking
         let mut delegation = pool_delegation.unwrap();
         let withdraw_balance = amount.unwrap_or(0);
-        delegation.withdraw_ts = Some(env::block_timestamp());
+        delegation.withdraw_epoch = Some(env::epoch_height() + 4);
         delegation.withdraw_balance = Some(withdraw_balance);
         self.stake_pending_delegations
             .insert(&pool_account_id, &delegation);

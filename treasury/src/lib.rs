@@ -1,8 +1,8 @@
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{TreeMap, UnorderedMap},
+    collections::{TreeMap, UnorderedMap, UnorderedSet},
     env, ext_contract,
-    json_types::{Base64VecU8, U128, U256, U64},
+    json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json,
@@ -39,6 +39,7 @@ pub const MIN_BALANCE_FOR_STORAGE: u128 = 20 * ONE_NEAR;
 pub enum StorageKeys {
     ActionsCadence,
     ActionsTimeout,
+    ActionsApproved,
     FungibleTokenBalances,
     NonFungibleTokenHoldings,
     StakePools,
@@ -54,6 +55,9 @@ pub struct Contract {
     owner_id: AccountId, // single or DAO entity
     // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance, can be DAO or members
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
+
+    // General Config
+    approved_action_types: UnorderedSet<String>,
 
     // Croncat Scheduling Config
     croncat_id: Option<AccountId>,
@@ -87,6 +91,7 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            approved_action_types: UnorderedSet::new(StorageKeys::ActionsApproved),
             ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             nft_holdings: UnorderedMap::new(StorageKeys::NonFungibleTokenHoldings),
             croncat_id: None,

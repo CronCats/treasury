@@ -1,6 +1,7 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{Base58CryptoHash, Base64VecU8, U128, U64};
 use near_sdk::AccountId;
+use utils::assert_owner;
 
 use crate::*;
 
@@ -49,6 +50,8 @@ pub enum ActionType {
         /// Description of what this budget is for or why, could be metadata if paying a subscription service
         msg: Option<String>,
     },
+
+    // TODO: Add Stake/Unstake as action
 
     /// Swaps can be made to approved DEXs
     /// NOTE: must comply with storage payments before action can be taken
@@ -112,50 +115,30 @@ impl ActionType {
 }
 
 impl Contract {
-    // TODO:
-    pub fn add_allowed_action(&mut self) {}
-
-    // TODO:
-    pub fn remove_allowed_action(&mut self) {}
-
-    // TODO:
-    /// Returns set of roles that this user is member of permissions for given user across all the roles it's member of.
-    fn get_action_types(&self) -> Vec<String> {
-        let mut roles = HashMap::default();
-        for role in self.roles.iter() {
-            if role.kind.match_user(&user) {
-                roles.insert(role.name.clone(), &role.permissions);
-            }
-        }
-        roles
+    pub fn get_action_label(&self, action: ActionType) -> String {
+        action.to_label().to_string()
     }
 
-    // TODO:
-    /// Can given user execute given action on this proposal.
-    /// Returns all roles that allow this action.
-    pub fn allowed_action(&self, action: String) -> (Vec<String>, bool) {
-        let roles = self.get_user_roles(user);
-        let mut allowed = false;
-        let allowed_roles = roles
-            .into_iter()
-            .filter_map(|(role, permissions)| {
-                let allowed_role = permissions.contains(&format!(
-                    "{}:{}",
-                    proposal_kind.to_policy_label(),
-                    action.to_policy_label()
-                )) || permissions
-                    .contains(&format!("{}:*", proposal_kind.to_policy_label()))
-                    || permissions.contains(&format!("*:{}", action.to_policy_label()))
-                    || permissions.contains("*:*");
-                allowed = allowed || allowed_role;
-                if allowed_role {
-                    Some(role)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        (allowed_roles, allowed)
+    pub fn add_allowed_actions(&mut self, actions: Vec<ActionType>) {
+        assert_owner(&self.owner_id);
+        for action in actions.iter() {
+            self.approved_action_types.insert(&self.get_action_label(action.clone()));
+        }
+    }
+
+    pub fn remove_allowed_action(&mut self, action: ActionType) {
+        assert_owner(&self.owner_id);
+        self.approved_action_types.remove(&self.get_action_label(action));
+    }
+
+    /// Returns list of approved actions
+    fn get_approved_action_types(&self) -> Vec<String> {
+        self.approved_action_types.to_vec()
+    }
+
+    /// Returns if an action is allowed or not
+    pub fn is_allowed_action(&self, action: ActionType) -> bool {
+        self.approved_action_types.contains(&self.get_action_label(action))
     }
 
     // TODO:
@@ -170,7 +153,7 @@ impl Contract {
     // TODO:
     pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
 
-    // TODO:
+    // TODO: Also setup a way for multiple budgets to batch create
     pub fn create_action_budget(&self, action: ActionType) {
         // NOTE: There are 3 scenarios to cover: NEAR/FT 1 time, NEAR/FT recurring, NEAR percentile
         // TODO:
