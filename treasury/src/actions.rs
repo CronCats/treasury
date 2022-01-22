@@ -6,8 +6,8 @@ use utils::assert_owner;
 use crate::*;
 
 /// Function call arguments.
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Clone, Debug))]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
 pub struct ActionCall {
     method_name: String,
@@ -16,8 +16,8 @@ pub struct ActionCall {
     gas: U64,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Clone, Debug))]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
 pub enum ActionType {
     /// Transfers given amount of `token_id` from this DAO to `receiver_id`.
@@ -119,9 +119,12 @@ pub enum ActionTime {
 }
 
 /// Function call arguments.
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Action {
+    /// Allows for prioritization of an action the same execution window as other actions
+    /// NOTE: Not really a fully implemented priority, as default will be 0, priority will be 1, signalling placing at front or back of a VecDeque.
+    priority: u8,
     /// timeout based budget item
     timeout: Option<U128>,
     /// Croncat budget "cron tab" spec, string, see: https://cron.cat for more info
@@ -133,14 +136,18 @@ pub struct Action {
 impl Action {
     /// Returns label of policy for given type of proposal.
     pub fn get_time_type(&self) -> ActionTime {
-        if self.timeout.is_some() { return ActionTime::Timeout }
-        if self.cadence.is_some() { return ActionTime::Cadence }
+        if self.timeout.is_some() {
+            return ActionTime::Timeout;
+        }
+        if self.cadence.is_some() {
+            return ActionTime::Cadence;
+        }
         ActionTime::Immediate
     }
 }
 
 impl Contract {
-    pub fn get_action_label(&self, action: ActionType) -> String {
+    pub fn get_action_label(&self, action: &ActionType) -> String {
         action.to_label().to_string()
     }
 
@@ -148,14 +155,14 @@ impl Contract {
         assert_owner(&self.owner_id);
         for action in actions.iter() {
             self.approved_action_types
-                .insert(&self.get_action_label(action.clone()));
+                .insert(&self.get_action_label(action));
         }
     }
 
     pub fn remove_allowed_action(&mut self, action: ActionType) {
         assert_owner(&self.owner_id);
         self.approved_action_types
-            .remove(&self.get_action_label(action));
+            .remove(&self.get_action_label(&action));
     }
 
     /// Returns list of approved actions
@@ -164,16 +171,16 @@ impl Contract {
     }
 
     /// Returns if an action is allowed or not
-    pub fn is_allowed_action(&self, action: ActionType) -> bool {
+    pub fn is_allowed_action(&self, action: &ActionType) -> bool {
         self.approved_action_types
-            .contains(&self.get_action_label(action))
+            .contains(&self.get_action_label(&action))
     }
 
     /// Accept a list of actions, parse for when and how they should get stored
     pub fn create_actions(&mut self, actions: Vec<Action>) {
         for action in actions.iter() {
-            // Check if Action not allowed"
-            if self.is_allowed_action(action.payload) {
+            // Make sure action is allowed
+            if self.is_allowed_action(&action.payload) {
                 // Check if action is time based OR cadence based
                 match action.get_time_type() {
                     ActionTime::Timeout => {
@@ -183,19 +190,25 @@ impl Contract {
                         assert!(u128::from(env::block_timestamp()) < timeout.0);
 
                         // get the next timestamp, then check where to add to the duration tree
-                        let mut ts_actions = self.timeout_actions.get(&timeout.0).unwrap_or(Vec::new());
-                        ts_actions.push(*action);
+                        let mut ts_actions =
+                            self.timeout_actions.get(&timeout.0).unwrap_or(VecDeque::new());
+                        
+                        // place with priority, then write to storage
+                        if action.priority > 0 { ts_actions.push_front(action.clone()); } else { ts_actions.push_back(action.clone()); }
                         self.timeout_actions.insert(&timeout.0, &ts_actions);
-                    },
+                    }
                     ActionTime::Cadence => {
-                        let cadence_key = action.cadence.expect("No cadence found");
-                        let mut cad_actions = self.cadence_actions.get(&cadence_key).unwrap_or(Vec::new());
-                        cad_actions.push(*action);
+                        let cadence_key = action.cadence.clone().unwrap();
+                        let mut cad_actions =
+                            self.cadence_actions.get(&cadence_key).unwrap_or(VecDeque::new());
+                        
+                        // place with priority, then write to storage
+                        if action.priority > 0 { cad_actions.push_front(action.clone()); } else { cad_actions.push_back(action.clone()); }
                         self.cadence_actions.insert(&cadence_key, &cad_actions);
-                    },
+                    }
                     ActionTime::Immediate => {
-                        self.call_action(*action);
-                    },
+                        self.call_action(action.clone());
+                    }
                 }
             }
         }
@@ -207,15 +220,32 @@ impl Contract {
     // TODO:
     pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
 
-    // TODO: Need to view if there are any actions that need calling, ONLY for the timeout actions
+    // TODO:
+    /// View if there are any actions that need calling, ONLY for the timeout actions
     pub fn has_timeout_action(&self) -> (bool, Vec<U128>) {
-        (false, Vec::new())
+        if self.timeout_actions.len() == 0 {
+            return (false, Vec::new());
+        }
+        let block_ts = u128::from(env::block_timestamp());
+        let key = self.timeout_actions.floor_key(&block_ts);
+        let mut timeouts: Vec<U128> = self
+            .timeout_actions
+            .to_vec()
+            .iter()
+            .map(|(k, _)| U128::from(*k))
+            .collect();
+        timeouts.retain(|t| t.0 < block_ts);
+        (key.is_some(), timeouts)
     }
 
     // TODO: Need to create logic for the execution of each type of action here!
     // TODO: eval for future exec based on action time config
     // TODO: This can be called by proxy_call OR directly by timeout action??
     fn call_action(&self, action: Action) -> PromiseOrValue<()> {
+        // validate this action exists and where
+
+        // match the right type to its function
+
         PromiseOrValue::Value(())
     }
 
@@ -243,7 +273,7 @@ impl Contract {
     }
 
     /// Execute a budget item, sending payment to a recipient, calculating amount if percent based.
-    pub fn action_budget(
+    fn action_budget(
         &mut self,
         token_id: Option<AccountId>,
         receiver_id: AccountId,
@@ -252,6 +282,7 @@ impl Contract {
         msg: Option<String>,
     ) {
         // Compute the amount: whole number or percent into whole number
+        // NOTE: does not support percentile including staked balance, you should unstake if needed first before doing percentile payments
         let final_amount = amount.unwrap_or(U128::from(
             (U256::from(amount_percentile.unwrap_or(U128::from(0)).0)
                 * U256::from(env::account_balance())

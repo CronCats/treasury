@@ -121,9 +121,7 @@ impl Contract {
         for pool_account_id in keys.iter() {
             if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
                 // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
-                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height()
-                    && delegation.withdraw_balance.expect("No withdraw balance") > 0
-                {
+                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height() && delegation.withdraw_balance.expect("No withdraw balance") > 0 {
                     has_withdraw = true;
                 }
 
@@ -139,7 +137,7 @@ impl Contract {
     /// near view treasury.testnet needs_stake_rebalance --accountId manager_v1.croncat.testnet
     /// ```
     pub fn needs_stake_rebalance(&self) -> (bool, u128, u128, u128, u128) {
-        let threshold = self.stake_threshold;
+        let threshold = &self.stake_threshold;
         let current_balance = env::account_balance();
         let mut total_balance: Balance = 0;
         let mut staked_balance: Balance = 0;
@@ -220,7 +218,7 @@ impl Contract {
         // Check if approved caller
         assert!(
             env::predecessor_account_id() == self.owner_id
-                || env::predecessor_account_id() == self.croncat_id.unwrap(),
+                || env::predecessor_account_id() == self.croncat_id.clone().unwrap(),
             "Not an approved caller"
         );
         let (
@@ -245,7 +243,7 @@ impl Contract {
         // Check if liquid balance is above threshold deviation
         if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
             // Time to restake some amount
-            self.deposit_and_stake(pool_id, Some(liquid_ideal.saturating_sub(liquid_actual)));
+            self.deposit_and_stake(pool_id.clone(), Some(liquid_ideal.saturating_sub(liquid_actual)));
         }
 
         // Check if liquid balance is below threshold deviation
@@ -255,7 +253,7 @@ impl Contract {
                 let unstake_amount = Some(liquid_extreme_deviation.saturating_sub(liquid_actual));
                 let pool = self
                     .stake_delegations
-                    .get(&pool_id)
+                    .get(&pool_id.clone())
                     .expect("No delegation found for pool");
                 // If pool supports liquid unstaking, otherwise go to regular
                 if pool.liquid_unstake_function.is_some() {

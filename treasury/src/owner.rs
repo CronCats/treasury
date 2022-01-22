@@ -13,9 +13,7 @@ impl Contract {
         &mut self,
         owner_id: Option<AccountId>,
         croncat_id: Option<AccountId>,
-        stake_threshold_percentage: Option<U128>,
-        stake_eval_period: Option<U128>,
-        stake_eval_cadence: Option<String>,
+        stake_threshold: Option<StakeThreshold>,
     ) {
         assert_eq!(
             self.owner_id,
@@ -32,14 +30,8 @@ impl Contract {
         }
 
         // Staking Settings
-        if let Some(stake_threshold_percentage) = stake_threshold_percentage {
-            self.stake_threshold_percentage = stake_threshold_percentage.0;
-        }
-        if let Some(stake_eval_period) = stake_eval_period {
-            self.stake_eval_period = stake_eval_period.0;
-        }
-        if let Some(stake_eval_cadence) = stake_eval_cadence {
-            self.stake_eval_cadence = stake_eval_cadence;
+        if let Some(stake_threshold) = stake_threshold {
+            self.stake_threshold = stake_threshold;
         }
     }
 }

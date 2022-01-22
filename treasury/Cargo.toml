@@ -12,8 +12,8 @@ crate-type = ["cdylib", "rlib"]
 #near-contract-standards = { git = "https://github.com/near/near-contract-standards", rev="" }
 
 [dependencies]
-near-sdk = {version = "4.0.0-pre.4", features = ["unstable"]}
-near-contract-standards = "4.0.0-pre.4"
+near-sdk = {version = "4.0.0-pre.6", features = ["unstable"]}
+near-contract-standards = "4.0.0-pre.6"
 hex = "0.4.2"
 uint = { version = "0.8.3", default-features = false }
 
