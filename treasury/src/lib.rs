@@ -1,3 +1,4 @@
+use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{TreeMap, UnorderedMap, UnorderedSet},
@@ -7,8 +8,15 @@ use near_sdk::{
     serde::{Deserialize, Serialize},
     serde_json,
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
+    PromiseResult,
 };
+use uint::construct_uint;
+
+construct_uint! {
+    /// 256-bit unsigned integer.
+    pub struct U256(4);
+}
 
 mod actions;
 mod external;
@@ -20,7 +28,7 @@ mod views;
 mod ft_impl;
 mod nft_impl;
 
-use actions::ActionType;
+use actions::Action;
 use staking::{StakeDelegation, StakeThreshold};
 
 // Balance & Fee Definitions
@@ -61,8 +69,8 @@ pub struct Contract {
 
     // Croncat Scheduling Config
     croncat_id: Option<AccountId>,
-    cadence_actions: UnorderedMap<String, Vec<ActionType>>, // recurring items, using croncat cadence
-    timeout_actions: TreeMap<u64, Vec<ActionType>>, // single trigger items, using croncat trigger upon a timeout/future timestamp
+    cadence_actions: UnorderedMap<String, Vec<Action>>, // recurring items, using croncat cadence
+    timeout_actions: TreeMap<u128, Vec<Action>>, // single trigger items, using croncat trigger upon a timeout/future timestamp
 
     // Token Standards
     ft_balances: UnorderedMap<AccountId, u128>,

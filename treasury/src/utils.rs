@@ -1,11 +1,5 @@
 use crate::*;
 use near_sdk::{env, PromiseResult};
-use uint::construct_uint;
-
-construct_uint! {
-    /// 256-bit unsigned integer.
-    pub struct U256(4);
-}
 
 pub const EPOCH_LENGTH: u64 = 43_200;
 

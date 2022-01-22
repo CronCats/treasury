@@ -41,6 +41,7 @@ pub struct StakeDelegation {
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
 #[serde(crate = "near_sdk::serde")]
 pub struct StakeThreshold {
+    // TODO: Bool for turning on/off auto-staking
     pub denominator: u64,       // default 100
     pub liquid: u64,            // default 30%
     pub staked: u64,            // default 70%
@@ -109,51 +110,6 @@ impl Contract {
     /// Returns all staking delegations
     ///
     /// ```bash
-    /// near view treasury.testnet get_delegations '{"from_index": 0, "limit": 10}'
-    /// ```
-    pub fn get_delegations(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<StakeDelegation> {
-        let mut ret: Vec<StakeDelegation> = Vec::new();
-        let mut start = 0;
-        let mut end = 10;
-        if let Some(from_index) = from_index {
-            start = from_index.0;
-        }
-        if let Some(limit) = limit {
-            end = u64::min(start + limit.0, self.stake_delegations.len());
-        }
-
-        // Return all data within range
-        let keys = self.stake_delegations.keys_as_vector();
-        for i in start..end {
-            if let Some(pool_account_id) = keys.get(i) {
-                if let Some(delegation) = self.stake_delegations.get(&pool_account_id) {
-                    let mut delegation_info = StakeDelegation {
-                        init_balance: delegation.init_balance,
-                        balance: delegation.balance,
-                        start_block: delegation.start_block,
-                        withdraw_epoch: delegation.withdraw_epoch,
-                        withdraw_balance: delegation.withdraw_balance,
-                        withdraw_function: delegation.withdraw_function,
-                        liquid_unstake_function: delegation.liquid_unstake_function,
-                        yield_function: delegation.yield_function,
-                    };
-
-                    // Adjust pending info if exists
-                    if let Some(pending_delegation) = self.stake_pending_delegations.get(&pool_account_id) {
-                        delegation_info.withdraw_epoch = pending_delegation.withdraw_epoch;
-                        delegation_info.withdraw_balance = pending_delegation.withdraw_balance;
-                    }
-
-                    ret.push(delegation_info);
-                }
-            }
-        }
-        ret
-    }
-
-    /// Returns all staking delegations
-    ///
-    /// ```bash
     /// near view treasury.testnet has_delegation_to_withdraw
     /// ```
     pub fn has_delegation_to_withdraw(&self) -> (bool, Vec<AccountId>) {
@@ -165,7 +121,9 @@ impl Contract {
         for pool_account_id in keys.iter() {
             if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
                 // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
-                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height() && delegation.withdraw_balance.expect("No withdraw balance") > 0 {
+                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height()
+                    && delegation.withdraw_balance.expect("No withdraw balance") > 0
+                {
                     has_withdraw = true;
                 }
 
@@ -522,6 +480,7 @@ impl Contract {
         );
 
         // Add withdraw scheduler, if croncat is configured
+        // NOTE: Could also add this as a timeout action!
         if self.croncat_id.is_some() {
             external::croncat::create_task(
                 env::current_account_id().to_string(),
