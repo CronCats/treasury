@@ -107,15 +107,7 @@ impl Contract {
             croncat_id: None,
             cadence_actions: UnorderedMap::new(StorageKeys::ActionsCadence),
             timeout_actions: TreeMap::new(StorageKeys::ActionsTimeout),
-            stake_threshold: StakeThreshold {
-                denominator: 100,
-                liquid: 30,                              // 30%
-                staked: 70,                              // 70%
-                deviation: 5,                            // 5%
-                extreme_deviation: 15,                   // 15%
-                eval_period: 12 * 60 * 60 * 1000, // Decide on time delay, in seconds, default 12hrs
-                eval_cadence: "0 0 * * * *".to_string(), // OR cron cadence
-            },
+            stake_threshold: StakeThreshold::default(),
             stake_delegations: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
             stake_pending_delegations: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
                                                                                           // yield_functions: LookupMap::new(StorageKeys::YieldFunctions),

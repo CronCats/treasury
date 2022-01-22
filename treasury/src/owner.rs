@@ -1,10 +1,5 @@
 use crate::*;
 
-// // Staking
-// stake_threshold_percentage: u128,
-// stake_eval_period: u128, // Decide on time delay, in seconds
-// stake_eval_cadence: String, // OR cron cadence
-
 #[near_bindgen]
 impl Contract {
 
@@ -20,11 +15,7 @@ impl Contract {
         croncat_id: Option<AccountId>,
         stake_threshold: Option<StakeThreshold>,
     ) {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
+        self.assert_owner();
 
         // BE CAREFUL!
         if let Some(owner_id) = owner_id {

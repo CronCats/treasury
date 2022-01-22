@@ -37,7 +37,7 @@ pub struct StakeDelegation {
 }
 
 /// Stake Buckets keep track of staked amounts per-pool
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct StakeThreshold {
     // TODO: Bool for turning on/off auto-staking
@@ -48,6 +48,20 @@ pub struct StakeThreshold {
     pub extreme_deviation: u64, // default 15%
     pub eval_period: u128,      // Decide on time delay, in seconds
     pub eval_cadence: String,   // OR cron cadence
+}
+
+impl Default for StakeThreshold {
+    fn default() -> Self {
+        StakeThreshold {
+            denominator: 100,
+            liquid: 30,                              // 30%
+            staked: 70,                              // 70%
+            deviation: 5,                            // 5%
+            extreme_deviation: 15,                   // 15%
+            eval_period: 12 * 60 * 60 * 1000, // Decide on time delay, in seconds, default 12hrs
+            eval_cadence: "0 0 * * * *".to_string(), // OR cron cadence
+        }
+    }
 }
 
 // TODO:
