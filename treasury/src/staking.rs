@@ -1,7 +1,6 @@
 use crate::*;
 
 use near_sdk::BlockHeight;
-use utils::assert_owner;
 
 /// Amount of blocks needed before withdraw is available
 pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
@@ -70,7 +69,7 @@ impl Contract {
         // IF the withdraw function is different than standard
         withdraw_function: Option<String>,
     ) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let current_pool = self.stake_delegations.get(&pool_account_id);
 
         // Insert ONLY if there isn't a record of this pool already
@@ -97,7 +96,7 @@ impl Contract {
     /// near call treasury.testnet remove_staking_pool '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn remove_staking_pool(&mut self, pool_account_id: AccountId) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let current_pool = self.stake_delegations.get(&pool_account_id);
 
         // Insert ONLY if there isn't a record of this pool already
@@ -139,7 +138,6 @@ impl Contract {
     pub fn needs_stake_rebalance(&self) -> (bool, u128, u128, u128, u128) {
         let threshold = &self.stake_threshold;
         let current_balance = env::account_balance();
-        let mut total_balance: Balance = 0;
         let mut staked_balance: Balance = 0;
         let mut unstaking_balance: Balance = 0;
 
@@ -155,7 +153,7 @@ impl Contract {
 
         // update total balance, so we can check thresholds
         // TODO: Check if taking unstaking balance into consideration is a bad idea realistically
-        total_balance =
+        let total_balance: Balance =
             current_balance.saturating_add(staked_balance.saturating_add(unstaking_balance));
 
         // Compute threshold values
@@ -287,7 +285,7 @@ impl Contract {
     /// ```
     #[payable]
     pub fn deposit_and_stake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let mut stake_amount: Balance = 0;
         let pool_delegation = self.stake_delegations.get(&pool_account_id);
         assert!(pool_delegation.is_some(), "Stake delegation doesnt exist");
@@ -415,9 +413,7 @@ impl Contract {
 
                 // If its known, immediately make withdraw available, otherwise compute when withdraw is available
                 if pool_balance.can_withdraw {
-                    let unstake_duration: u64 = utils::get_epoch_withdrawal_time(None);
-                    delegation.withdraw_epoch =
-                        Some(env::block_timestamp().saturating_sub(unstake_duration * 1_000_000));
+                    delegation.withdraw_epoch = Some(env::epoch_height() + 4);
                 }
 
                 // Update the balances of pool
@@ -445,7 +441,7 @@ impl Contract {
     /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let pool_delegation = self.stake_delegations.get(&pool_account_id);
         assert!(pool_delegation.is_some(), "Stake delegation doesnt exist");
         let mut unstake_function = "unstake_all";
@@ -504,7 +500,7 @@ impl Contract {
     /// near call treasury.testnet withdraw_all '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn withdraw_all(&mut self, pool_account_id: AccountId) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let pending_pool_delegation = self
             .stake_pending_delegations
             .get(&pool_account_id)
@@ -542,7 +538,7 @@ impl Contract {
     /// near call treasury.testnet liquid_unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
     pub fn liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let delegated_stake = self.stake_delegations.get(&pool_account_id);
         assert!(delegated_stake.is_some(), "Delegation doesnt exist");
         let delegation = delegated_stake.unwrap();
@@ -584,7 +580,7 @@ impl Contract {
     /// CALLBACK for get_staked_balance
     #[private]
     pub fn callback_liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
-        utils::is_promise_success();
+        is_promise_success();
 
         // Return balance or 0
         match env::promise_result(0) {
@@ -650,7 +646,7 @@ impl Contract {
     /// near call treasury.testnet yield_harvest '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn yield_harvest(&mut self, pool_account_id: AccountId) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         let delegated_stake = self.stake_delegations.get(&pool_account_id);
         assert!(delegated_stake.is_some(), "Delegation doesnt exist");
         let delegation = delegated_stake.unwrap();

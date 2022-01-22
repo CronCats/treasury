@@ -7,6 +7,11 @@ use crate::*;
 
 #[near_bindgen]
 impl Contract {
+
+    pub(crate) fn assert_owner(&self) {
+        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
+    }
+
     /// Changes core configurations
     /// Should only be updated by owner -- in best case DAO based :)
     pub fn update_settings(

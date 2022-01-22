@@ -1,7 +1,6 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{Base58CryptoHash, Base64VecU8, U128, U64};
 use near_sdk::AccountId;
-use utils::assert_owner;
 
 use crate::*;
 
@@ -152,7 +151,7 @@ impl Contract {
     }
 
     pub fn add_allowed_actions(&mut self, actions: Vec<ActionType>) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         for action in actions.iter() {
             self.approved_action_types
                 .insert(&self.get_action_label(action));
@@ -160,13 +159,13 @@ impl Contract {
     }
 
     pub fn remove_allowed_action(&mut self, action: ActionType) {
-        assert_owner(&self.owner_id);
+        self.assert_owner();
         self.approved_action_types
             .remove(&self.get_action_label(&action));
     }
 
     /// Returns list of approved actions
-    fn get_approved_action_types(&self) -> Vec<String> {
+    pub fn get_approved_action_types(&self) -> Vec<String> {
         self.approved_action_types.to_vec()
     }
 
@@ -199,12 +198,7 @@ impl Contract {
                     }
                     ActionTime::Cadence => {
                         let cadence_key = action.cadence.clone().unwrap();
-                        let mut cad_actions =
-                            self.cadence_actions.get(&cadence_key).unwrap_or(VecDeque::new());
-                        
-                        // place with priority, then write to storage
-                        if action.priority > 0 { cad_actions.push_front(action.clone()); } else { cad_actions.push_back(action.clone()); }
-                        self.cadence_actions.insert(&cadence_key, &cad_actions);
+                        self.cadence_actions.insert(&cadence_key, &action.clone());
                     }
                     ActionTime::Immediate => {
                         self.call_action(action.clone());
@@ -215,14 +209,14 @@ impl Contract {
     }
 
     // TODO:
-    pub fn remove_action(&mut self, action: ActionType) {}
+    // pub fn remove_action(&mut self, action: Action) {}
 
     // TODO:
-    pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
+    // pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
 
     // TODO:
     /// View if there are any actions that need calling, ONLY for the timeout actions
-    pub fn has_timeout_action(&self) -> (bool, Vec<U128>) {
+    pub fn has_timeout_actions(&self) -> (bool, Vec<U128>) {
         if self.timeout_actions.len() == 0 {
             return (false, Vec::new());
         }
@@ -238,25 +232,87 @@ impl Contract {
         (key.is_some(), timeouts)
     }
 
-    // TODO: Need to create logic for the execution of each type of action here!
-    // TODO: eval for future exec based on action time config
-    // TODO: This can be called by proxy_call OR directly by timeout action??
-    fn call_action(&self, action: Action) -> PromiseOrValue<()> {
-        // validate this action exists and where
+    /// Called by croncat cadence
+    // TODO: Validate if this can be "trusted" to be called as expected, otherwise deprecate.
+    pub fn call_cadence_action(&mut self, cadence: String) {
+        self.assert_owner(); // TODO: Change to approved only
+        let action = self.cadence_actions.get(&cadence).expect("No actions to execute");
+        self.call_action(action.clone());
+    }
 
+    // TODO: create FN that can be called by croncat trigger
+    pub fn call_timeout_actions(&mut self) {
+        let (has, keys) = self.has_timeout_actions();
+        assert_eq!(has, true, "No actions to execute");
+        let mut actions_total = 0;
+        let max_chunks = 10;
+
+        // Attempt to process a total of 10 actions, packing from one or more queues
+        for key in keys.iter() {
+            if actions_total > max_chunks { break; }
+
+            // Get a subset of the queue based on the key
+            if let Some(tmp_queue) = self.timeout_actions.get(&key.0) {
+                let mut subset = tmp_queue;
+                let queue = subset.split_off(max_chunks - actions_total);
+
+                // update storage removing the subset we will process
+                self.timeout_actions.insert(&key.0, &queue);
+
+                // iterate the subset to process all actions
+                for action in subset.iter() {
+                    self.call_action(action.clone());
+                }
+            }
+
+            actions_total += 1;
+        }
+    }
+
+    /// Execute and action based on its payload type
+    // NOTE: Could be great to get these setup as batched TXNs
+    fn call_action(&mut self, action: Action) -> PromiseOrValue<()> {
         // match the right type to its function
+        match action.payload {
+            ActionType::Transfer {
+                token_id,
+                receiver_id,
+                amount,
+                msg,
+            } => {
+                self.action_transfer(&token_id, &receiver_id, amount, msg);
+            }
+            ActionType::Budget {
+                token_id,
+                receiver_id,
+                amount,
+                amount_percentile,
+                msg,
+            } => {
+                self.action_budget(token_id, receiver_id, amount, amount_percentile, msg);
+            }
+            // TBD:
+            ActionType::Swap { .. } => { return PromiseOrValue::Value(()) }
+            ActionType::Harvest { .. } => { return PromiseOrValue::Value(()) }
+            ActionType::FunctionCall { .. } => { return PromiseOrValue::Value(()) }
+            ActionType::UpgradeSelf { .. } => { return PromiseOrValue::Value(()) }
+            ActionType::UpgradeRemote { .. } => { return PromiseOrValue::Value(()) }
+        }
+
+        // TODO: eval for future exec based on action time config
 
         PromiseOrValue::Value(())
     }
 
     // TODO: Notes here
-    fn action_transfer(
+    pub fn action_transfer(
         &mut self,
         token_id: &Option<AccountId>,
         receiver_id: &AccountId,
         amount: U128,
         msg: Option<String>,
     ) -> PromiseOrValue<()> {
+        self.assert_owner();
         if token_id.is_none() {
             Promise::new(receiver_id.clone()).transfer(amount.0).into()
         } else {
@@ -273,7 +329,7 @@ impl Contract {
     }
 
     /// Execute a budget item, sending payment to a recipient, calculating amount if percent based.
-    fn action_budget(
+    pub fn action_budget(
         &mut self,
         token_id: Option<AccountId>,
         receiver_id: AccountId,
@@ -281,6 +337,7 @@ impl Contract {
         amount_percentile: Option<U128>,
         msg: Option<String>,
     ) {
+        self.assert_owner();
         // Compute the amount: whole number or percent into whole number
         // NOTE: does not support percentile including staked balance, you should unstake if needed first before doing percentile payments
         let final_amount = amount.unwrap_or(U128::from(

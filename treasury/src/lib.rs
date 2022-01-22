@@ -11,6 +11,7 @@ use near_sdk::{
     serde_json::json,
     AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
     PromiseResult,
+    utils::is_promise_success,
 };
 use uint::construct_uint;
 
@@ -70,7 +71,7 @@ pub struct Contract {
 
     // Croncat Scheduling Config
     croncat_id: Option<AccountId>,
-    cadence_actions: UnorderedMap<String, VecDeque<Action>>, // recurring items, using croncat cadence
+    cadence_actions: UnorderedMap<String, Action>, // recurring items, using croncat cadence, only allowing 1 action per cadence for simplicity of non-pagination
     timeout_actions: TreeMap<u128, VecDeque<Action>>, // single trigger items, using croncat trigger upon a timeout/future timestamp
 
     // Token Standards
