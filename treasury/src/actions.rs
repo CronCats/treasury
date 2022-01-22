@@ -145,11 +145,23 @@ impl Action {
     }
 }
 
+#[near_bindgen]
 impl Contract {
+    /// Returns a short string that represents an ActionType
+    /// NOTE: Not really intended for external use, but no harm either
+    /// 
+    /// ```bash
+    /// near view treasury.testnet get_action_label '{ ...ActionType... }' --accountId treasury.testnet
+    /// ```
     pub fn get_action_label(&self, action: &ActionType) -> String {
         action.to_label().to_string()
     }
 
+    /// Allows owners to approve specific action types
+    ///
+    /// ```bash
+    /// near call treasury.testnet add_allowed_actions '{"actions": [{ "token_id": "wrap.near", "receiver_id": "you.near", "amount": "1", "msg": "" }]}' --accountId treasury.testnet
+    /// ```
     pub fn add_allowed_actions(&mut self, actions: Vec<ActionType>) {
         self.assert_owner();
         for action in actions.iter() {
@@ -158,6 +170,12 @@ impl Contract {
         }
     }
 
+    /// Allows owners to remove approved action types
+    /// NOTE: Any current actions that have been slated to execute will not be removed, must be manually/individually removed for safety.
+    ///
+    /// ```bash
+    /// near call treasury.testnet remove_allowed_action '{"token_id": "wrap.near", "receiver_id": "you.near", "amount": "1", "msg": ""}' --accountId treasury.testnet
+    /// ```
     pub fn remove_allowed_action(&mut self, action: ActionType) {
         self.assert_owner();
         self.approved_action_types
@@ -165,17 +183,29 @@ impl Contract {
     }
 
     /// Returns list of approved actions
+    ///
+    /// ```bash
+    /// near view treasury.testnet get_approved_action_types
+    /// ```
     pub fn get_approved_action_types(&self) -> Vec<String> {
         self.approved_action_types.to_vec()
     }
 
     /// Returns if an action is allowed or not
+    ///
+    /// ```bash
+    /// near view treasury.testnet  '{"token_id": "wrap.near", "receiver_id": "you.near", "amount": "1", "msg": ""}' --accountId treasury.testnet
+    /// ```
     pub fn is_allowed_action(&self, action: &ActionType) -> bool {
         self.approved_action_types
             .contains(&self.get_action_label(&action))
     }
 
     /// Accept a list of actions, parse for when and how they should get stored
+    ///
+    /// ```bash
+    /// near call treasury.testnet create_actions '{"actions": [{ ...Action... }]}' --accountId treasury.testnet
+    /// ```
     pub fn create_actions(&mut self, actions: Vec<Action>) {
         for action in actions.iter() {
             // Make sure action is allowed
@@ -209,13 +239,25 @@ impl Contract {
     }
 
     // TODO:
+    ///
+    /// ```bash
+    /// near call treasury.testnet remove_action '{"action": { ...Action... }}' --accountId treasury.testnet
+    /// ```
     // pub fn remove_action(&mut self, action: Action) {}
 
     // TODO:
+    ///
+    /// ```bash
+    /// near view treasury.testnet get_actions
+    /// ```
     // pub fn get_actions(&self, from_index: Option<U64>, limit: Option<U64>) {}
 
-    // TODO:
-    /// View if there are any actions that need calling, ONLY for the timeout actions
+    /// View if there are any actions that need calling
+    /// Used for periodically checking if some action needs to occur, and time has passed so it can
+    ///
+    /// ```bash
+    /// near view treasury.testnet has_timeout_actions
+    /// ```
     pub fn has_timeout_actions(&self) -> (bool, Vec<U128>) {
         if self.timeout_actions.len() == 0 {
             return (false, Vec::new());
@@ -232,15 +274,23 @@ impl Contract {
         (key.is_some(), timeouts)
     }
 
-    /// Called by croncat cadence
     // TODO: Validate if this can be "trusted" to be called as expected, otherwise deprecate.
+    /// Called by croncat cadence
+    ///
+    /// ```bash
+    /// near call treasury.testnet call_cadence_action '{"cadence": "0 0 * * * *"}' --accountId manager_v1.croncat.testnet
+    /// ```
     pub fn call_cadence_action(&mut self, cadence: String) {
         self.assert_owner(); // TODO: Change to approved only
         let action = self.cadence_actions.get(&cadence).expect("No actions to execute");
         self.call_action(action.clone());
     }
 
-    // TODO: create FN that can be called by croncat trigger
+    /// Called by croncat trigger
+    ///
+    /// ```bash
+    /// near call treasury.testnet call_timeout_actions --accountId manager_v1.croncat.testnet
+    /// ```
     pub fn call_timeout_actions(&mut self) {
         let (has, keys) = self.has_timeout_actions();
         assert_eq!(has, true, "No actions to execute");
@@ -304,7 +354,8 @@ impl Contract {
         PromiseOrValue::Value(())
     }
 
-    // TODO: Notes here
+    /// Basic NEAR or FT transfer logic
+    #[private]
     pub fn action_transfer(
         &mut self,
         token_id: &Option<AccountId>,
@@ -312,7 +363,6 @@ impl Contract {
         amount: U128,
         msg: Option<String>,
     ) -> PromiseOrValue<()> {
-        self.assert_owner();
         if token_id.is_none() {
             Promise::new(receiver_id.clone()).transfer(amount.0).into()
         } else {
@@ -329,6 +379,7 @@ impl Contract {
     }
 
     /// Execute a budget item, sending payment to a recipient, calculating amount if percent based.
+    #[private]
     pub fn action_budget(
         &mut self,
         token_id: Option<AccountId>,
@@ -337,7 +388,6 @@ impl Contract {
         amount_percentile: Option<U128>,
         msg: Option<String>,
     ) {
-        self.assert_owner();
         // Compute the amount: whole number or percent into whole number
         // NOTE: does not support percentile including staked balance, you should unstake if needed first before doing percentile payments
         let final_amount = amount.unwrap_or(U128::from(
