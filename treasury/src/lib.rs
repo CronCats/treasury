@@ -1,34 +1,55 @@
+use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, UnorderedMap},
-    env,
-    json_types::{U128, U64},
+    collections::{TreeMap, UnorderedMap, UnorderedSet},
+    env, ext_contract,
+    json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
-    serde_json::json,
     serde_json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, PromiseResult,
+    serde_json::json,
+    utils::is_promise_success,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
+    PromiseResult,
 };
+use std::collections::VecDeque;
+use uint::construct_uint;
 
+construct_uint! {
+    /// 256-bit unsigned integer.
+    pub struct U256(4);
+}
+
+mod actions;
+mod external;
 mod owner;
-// mod utils;
-mod views;
 mod staking;
+mod utils;
+mod views;
 // mod storage_impl;
 mod ft_impl;
 mod nft_impl;
 
+use actions::Action;
+use staking::{StakeDelegation, StakeThreshold};
+
 // Balance & Fee Definitions
-pub const NO_DEPOSIT: u128 = 0;
-pub const ONE_YOCTO: u128 = 1;
+pub const NO_DEPOSIT: Balance = 0;
+/// 1 yN to prevent access key fraud.
+pub const ONE_YOCTO: Balance = 1;
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = Gas(3_000_000_000_000);
+/// Gas for single ft_transfer call.
+pub const GAS_FOR_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
-
+pub const MIN_BALANCE_FOR_STORAGE: u128 = 20 * ONE_NEAR;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
+    ActionsCadence,
+    ActionsTimeout,
+    ActionsApproved,
     FungibleTokenBalances,
     NonFungibleTokenHoldings,
     StakePools,
@@ -42,26 +63,30 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId, // single or DAO entity
-    // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance
+    // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance, can be DAO or members
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
+
+    // General Config
+    approved_action_types: UnorderedSet<String>,
+
+    // Croncat Scheduling Config
+    croncat_id: Option<AccountId>,
+    cadence_actions: UnorderedMap<String, Action>, // recurring items, using croncat cadence, only allowing 1 action per cadence for simplicity of non-pagination
+    timeout_actions: TreeMap<u128, VecDeque<Action>>, // single trigger items, using croncat trigger upon a timeout/future timestamp
 
     // Token Standards
     ft_balances: UnorderedMap<AccountId, u128>,
     nft_holdings: UnorderedMap<AccountId, Vec<String>>,
 
     // Staking
-    stake_threshold_percentage: u128,
-    stake_eval_period: u128, // Decide on time delay, in seconds
-    stake_eval_cadence: String, // OR cron cadence
-    stake_pools: UnorderedMap<AccountId, Balance>, // for near staking, can be metapool, or other pools directly
-    stake_pending_pools: UnorderedMap<AccountId, Balance>, // for withdraw near staking
+    stake_threshold: StakeThreshold,
+    stake_delegations: UnorderedMap<AccountId, StakeDelegation>, // for near staking, can be metapool, or other pools directly
+    stake_pending_delegations: UnorderedMap<AccountId, StakeDelegation>, // for withdraw near staking
 
-    // Yield harvesting
-    yield_functions: LookupMap<AccountId, String>
-
-    // Storage
-    // ft_storage_usage: StorageUsage,
-    // nft_storage_usage: StorageUsage,
+                                                                         // Yield harvesting
+                                                                         // yield_functions: LookupMap<AccountId, String>, // Storage
+                                                                         // ft_storage_usage: StorageUsage,
+                                                                         // nft_storage_usage: StorageUsage
 }
 
 #[near_bindgen]
@@ -76,14 +101,16 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            approved_action_types: UnorderedSet::new(StorageKeys::ActionsApproved),
             ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             nft_holdings: UnorderedMap::new(StorageKeys::NonFungibleTokenHoldings),
-            stake_threshold_percentage: 3000, // 30%
-            stake_eval_period: 86400, // Daily eval delay, in seconds
-            stake_eval_cadence: "0 0 * * * *".to_string(), // Every hour cadence
-            stake_pools: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
-            stake_pending_pools: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
-            yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
+            croncat_id: None,
+            cadence_actions: UnorderedMap::new(StorageKeys::ActionsCadence),
+            timeout_actions: TreeMap::new(StorageKeys::ActionsTimeout),
+            stake_threshold: StakeThreshold::default(),
+            stake_delegations: UnorderedMap::new(StorageKeys::StakePools), // for near staking, can be metapool, or other pools directly
+            stake_pending_delegations: UnorderedMap::new(StorageKeys::StakePoolsPending), // for withdraw near staking
+                                                                                          // yield_functions: LookupMap::new(StorageKeys::YieldFunctions),
         }
     }
 }
