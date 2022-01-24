@@ -26,7 +26,7 @@ impl Contract {
     /// Supported Fungible Tokens
     ///
     /// ```bash
-    /// near call treasury.testnet get_nft_list
+    /// near view treasury.testnet get_nft_list
     /// ```
     pub fn get_nft_list(&self) -> Vec<AccountId> {
         self.nft_holdings.keys_as_vector().to_vec()
@@ -35,7 +35,7 @@ impl Contract {
     /// Non-Fungible Tokens
     ///
     /// ```bash
-    /// near call treasury.testnet nft_holdings '{"from_index": 0, "limit": 10}'
+    /// near view treasury.testnet nft_holdings '{"from_index": 0, "limit": 10}'
     /// ```
     pub fn nft_holdings(
         &self,
@@ -70,7 +70,7 @@ impl Contract {
     /// NOTE: Unlike the FT standard, this account_id is the "fungible token account id"
     ///
     /// ```bash
-    /// near call treasury.testnet nft_tokens '{"account_id": "image.testnet"}'
+    /// near view treasury.testnet nft_tokens '{"account_id": "image.testnet"}'
     /// ```
     pub fn nft_tokens(&self, account_id: AccountId) -> Vec<NonFungibleToken> {
         let tokens = self.nft_holdings.get(&account_id);

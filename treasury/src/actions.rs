@@ -247,9 +247,9 @@ impl Contract {
     // TODO:
     ///
     /// ```bash
-    /// near call treasury.testnet remove_action '{"action": { ...Action... }}' --accountId treasury.testnet
+    /// near call treasury.testnet remove_actions '{"action": { ...Action... }}' --accountId treasury.testnet
     /// ```
-    // pub fn remove_action(&mut self, action: Action) {}
+    // pub fn remove_actions(&mut self, action: Action) {}
 
     // TODO:
     ///

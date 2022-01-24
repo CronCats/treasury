@@ -19,7 +19,7 @@ impl Contract {
     /// Supported Fungible Tokens
     ///
     /// ```bash
-    /// near call treasury.testnet get_ft_list
+    /// near view treasury.testnet get_ft_list
     /// ```
     pub fn get_ft_list(&self) -> Vec<AccountId> {
         self.ft_balances.keys_as_vector().to_vec()
@@ -28,7 +28,7 @@ impl Contract {
     /// Fungible Token Balances
     ///
     /// ```bash
-    /// near call treasury.testnet ft_balances '{"from_index": 0, "limit": 10}'
+    /// near view treasury.testnet ft_balances '{"from_index": 0, "limit": 10}'
     /// ```
     pub fn ft_balances(
         &self,
@@ -66,7 +66,7 @@ impl Contract {
     /// NOTE: Unlike the FT standard, this account_id is the "fungible token account id"
     ///
     /// ```bash
-    /// near call treasury.testnet ft_balance_of '{"account_id": "wrap.testnet"}' --accountId treasury.testnet
+    /// near view treasury.testnet ft_balance_of '{"account_id": "wrap.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn ft_balance_of(&self, account_id: AccountId) -> U128 {
         U128::from(self.ft_balances.get(&account_id).unwrap_or(0))

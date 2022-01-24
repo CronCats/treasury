@@ -516,9 +516,9 @@ impl Contract {
     /// Withdraw unstaked balance from a pool, works in metapool and traditional validator pools
     ///
     /// ```bash
-    /// near call treasury.testnet withdraw_all '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
+    /// near call treasury.testnet withdraw '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
-    pub fn withdraw_all(&mut self, pool_account_id: AccountId) {
+    pub fn withdraw(&mut self, pool_account_id: AccountId) {
         self.assert_owner();
         let pending_pool_delegation = self
             .stake_pending_delegations
