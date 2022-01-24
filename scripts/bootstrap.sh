@@ -42,6 +42,6 @@ export TREASURY_ACCOUNT_ID=treasury.$NEAR_ACCT
 export CRONCAT_MANAGER_ID=manager_v1.croncat.$FACTORY
 
 # owner stuff
-near call $TREASURY_ACCOUNT_ID update_settings '{"croncat_id": "'$CRONCAT_MANAGER_ID'"' --accountId $AIRDROP_ACCOUNT_ID --gas $MAX_GAS
+near call $TREASURY_ACCOUNT_ID update_settings '{"croncat_id": "'$CRONCAT_MANAGER_ID'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 echo "Bootstrap Complete"

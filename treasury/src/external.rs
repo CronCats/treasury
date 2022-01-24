@@ -65,7 +65,7 @@ pub trait Croncat {
         cadence: String,
         recurring: Option<bool>,
         deposit: Option<U128>,
-        gas: Option<Gas>,
+        gas: Option<u64>,
         arguments: Option<Vec<u8>>,
     ) -> Base64VecU8;
     fn remove_task(&mut self, task_hash: Base64VecU8);
