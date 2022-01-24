@@ -357,7 +357,7 @@ impl Contract {
     /// NOTE: This is a CALL because it updates internal balances
     ///
     /// ```bash
-    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
+    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn get_staked_balance(&mut self, pool_account_id: AccountId) {
         assert!(
