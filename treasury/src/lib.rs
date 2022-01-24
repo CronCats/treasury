@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
@@ -9,10 +8,11 @@ use near_sdk::{
     serde::{Deserialize, Serialize},
     serde_json,
     serde_json::json,
+    utils::is_promise_success,
     AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
     PromiseResult,
-    utils::is_promise_success,
 };
+use std::collections::VecDeque;
 use uint::construct_uint;
 
 construct_uint! {

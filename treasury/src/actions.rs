@@ -149,7 +149,7 @@ impl Action {
 impl Contract {
     /// Returns a short string that represents an ActionType
     /// NOTE: Not really intended for external use, but no harm either
-    /// 
+    ///
     /// ```bash
     /// near view treasury.testnet get_action_label '{ ...ActionType... }' --accountId treasury.testnet
     /// ```
@@ -219,11 +219,17 @@ impl Contract {
                         assert!(u128::from(env::block_timestamp()) < timeout.0);
 
                         // get the next timestamp, then check where to add to the duration tree
-                        let mut ts_actions =
-                            self.timeout_actions.get(&timeout.0).unwrap_or(VecDeque::new());
-                        
+                        let mut ts_actions = self
+                            .timeout_actions
+                            .get(&timeout.0)
+                            .unwrap_or(VecDeque::new());
+
                         // place with priority, then write to storage
-                        if action.priority > 0 { ts_actions.push_front(action.clone()); } else { ts_actions.push_back(action.clone()); }
+                        if action.priority > 0 {
+                            ts_actions.push_front(action.clone());
+                        } else {
+                            ts_actions.push_back(action.clone());
+                        }
                         self.timeout_actions.insert(&timeout.0, &ts_actions);
                     }
                     ActionTime::Cadence => {
@@ -282,7 +288,10 @@ impl Contract {
     /// ```
     pub fn call_cadence_action(&mut self, cadence: String) {
         self.assert_owner(); // TODO: Change to approved only
-        let action = self.cadence_actions.get(&cadence).expect("No actions to execute");
+        let action = self
+            .cadence_actions
+            .get(&cadence)
+            .expect("No actions to execute");
         self.call_action(action.clone());
     }
 
@@ -299,7 +308,9 @@ impl Contract {
 
         // Attempt to process a total of 10 actions, packing from one or more queues
         for key in keys.iter() {
-            if actions_total > max_chunks { break; }
+            if actions_total > max_chunks {
+                break;
+            }
 
             // Get a subset of the queue based on the key
             if let Some(tmp_queue) = self.timeout_actions.get(&key.0) {
@@ -319,6 +330,7 @@ impl Contract {
         }
     }
 
+    // TODO: Finish impls
     /// Execute and action based on its payload type
     // NOTE: Could be great to get these setup as batched TXNs
     fn call_action(&mut self, action: Action) -> PromiseOrValue<()> {
@@ -342,11 +354,11 @@ impl Contract {
                 self.action_budget(token_id, receiver_id, amount, amount_percentile, msg);
             }
             // TBD:
-            ActionType::Swap { .. } => { return PromiseOrValue::Value(()) }
-            ActionType::Harvest { .. } => { return PromiseOrValue::Value(()) }
-            ActionType::FunctionCall { .. } => { return PromiseOrValue::Value(()) }
-            ActionType::UpgradeSelf { .. } => { return PromiseOrValue::Value(()) }
-            ActionType::UpgradeRemote { .. } => { return PromiseOrValue::Value(()) }
+            ActionType::Swap { .. } => return PromiseOrValue::Value(()),
+            ActionType::Harvest { .. } => return PromiseOrValue::Value(()),
+            ActionType::FunctionCall { .. } => return PromiseOrValue::Value(()),
+            ActionType::UpgradeSelf { .. } => return PromiseOrValue::Value(()),
+            ActionType::UpgradeRemote { .. } => return PromiseOrValue::Value(()),
         }
 
         // TODO: eval for future exec based on action time config

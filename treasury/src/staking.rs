@@ -134,7 +134,9 @@ impl Contract {
         for pool_account_id in keys.iter() {
             if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
                 // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
-                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height() && delegation.withdraw_balance.expect("No withdraw balance") > 0 {
+                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height()
+                    && delegation.withdraw_balance.expect("No withdraw balance") > 0
+                {
                     has_withdraw = true;
                 }
 
@@ -255,7 +257,10 @@ impl Contract {
         // Check if liquid balance is above threshold deviation
         if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
             // Time to restake some amount
-            self.deposit_and_stake(pool_id.clone(), Some(liquid_ideal.saturating_sub(liquid_actual)));
+            self.deposit_and_stake(
+                pool_id.clone(),
+                Some(liquid_ideal.saturating_sub(liquid_actual)),
+            );
         }
 
         // Check if liquid balance is below threshold deviation
