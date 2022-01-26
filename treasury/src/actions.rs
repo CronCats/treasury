@@ -216,7 +216,12 @@ impl Contract {
                         assert!(action.timeout.is_some());
                         let timeout = action.timeout.unwrap_or(U128::from(0));
                         assert_ne!(timeout.0, 0);
-                        log!("block {:?}, tssss: {:?}, ts: {:?}", u128::from(env::block_timestamp()), timeout, timeout.0);
+                        log!(
+                            "block {:?}, tssss: {:?}, ts: {:?}",
+                            u128::from(env::block_timestamp()),
+                            timeout,
+                            timeout.0
+                        );
                         assert!(u128::from(env::block_timestamp()) < timeout.0);
 
                         // get the next timestamp, then check where to add to the duration tree

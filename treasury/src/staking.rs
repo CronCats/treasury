@@ -286,7 +286,9 @@ impl Contract {
         if liquid_actual < liquid_ideal.saturating_sub(liquid_deviation) {
             // Time to unstake some amount
             if liquid_actual < liquid_ideal.saturating_sub(liquid_extreme_deviation) {
-                let unstake_amount = Some(U128::from(liquid_extreme_deviation.saturating_sub(liquid_actual)));
+                let unstake_amount = Some(U128::from(
+                    liquid_extreme_deviation.saturating_sub(liquid_actual),
+                ));
                 let pool = self
                     .stake_delegations
                     .get(&pool_id.clone())
@@ -300,7 +302,9 @@ impl Contract {
             } else {
                 self.unstake(
                     pool_id,
-                    Some(U128::from(liquid_extreme_deviation.saturating_sub(liquid_actual))),
+                    Some(U128::from(
+                        liquid_extreme_deviation.saturating_sub(liquid_actual),
+                    )),
                 );
             }
         }
@@ -332,7 +336,8 @@ impl Contract {
             stake_amount = env::attached_deposit();
         } else {
             assert!(
-                u128::from(env::account_balance()).saturating_sub(amount.unwrap_or(U128::from(0)).0)
+                u128::from(env::account_balance())
+                    .saturating_sub(amount.unwrap_or(U128::from(0)).0)
                     > MIN_BALANCE_FOR_STORAGE,
                 "Account Balance Under Minimum Balance"
             );
@@ -523,11 +528,14 @@ impl Contract {
                 Some(false),
                 Some(U128::from(NO_DEPOSIT)),
                 Some(u64::from(GAS_STAKE_WITHDRAW_ALL + GAS_CRONCAT_CREATE_TASK)), // 70 Tgas
-                Some(Base64VecU8::from(json!({
-                    "pool_account_id": pool_account_id,
-                })
-                .to_string()
-                .as_bytes().to_vec())),
+                Some(Base64VecU8::from(
+                    json!({
+                        "pool_account_id": pool_account_id,
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                )),
                 self.croncat_id.clone().unwrap(),
                 CRONCAT_CREATE_TASK_FEE,
                 GAS_CRONCAT_CREATE_TASK,
@@ -705,7 +713,11 @@ impl Contract {
                 // Attempt to parse the returned available balance
                 let pool_min_expected_near: U128 = serde_json::de::from_slice(&result)
                     .expect("Could not get amount from stake pool");
-                log!("pool_min_expected_near {:?} {:?}", &pool_min_expected_near, &amount);
+                log!(
+                    "pool_min_expected_near {:?} {:?}",
+                    &pool_min_expected_near,
+                    &amount
+                );
 
                 // Double check values before going forward
                 assert!(pool_min_expected_near.0 > 0, "No st_near to unstake");
@@ -716,7 +728,9 @@ impl Contract {
                 if amount.is_some() {
                     // limit to maximum staked balance
                     // TODO: Get amount ratio, then st_near from ratio
-                    if st_near.0 > amount.unwrap().0 { st_near_to_burn = amount.unwrap() }
+                    if st_near.0 > amount.unwrap().0 {
+                        st_near_to_burn = amount.unwrap()
+                    }
                 }
 
                 // We have some balances, attempt to unstake

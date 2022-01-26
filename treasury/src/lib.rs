@@ -31,7 +31,7 @@ mod ft_impl;
 mod nft_impl;
 
 use actions::Action;
-use staking::{StakeDelegation, StakeThreshold, StakeDelegationHumanFriendly};
+use staking::{StakeDelegation, StakeDelegationHumanFriendly, StakeThreshold};
 
 // Balance & Fee Definitions
 pub const NO_DEPOSIT: Balance = 0;
