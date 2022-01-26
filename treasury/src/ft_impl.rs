@@ -1,7 +1,7 @@
 use crate::*;
 
 pub const GAS_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
-pub const GAS_FT_BALANCE_OF: Gas = Gas(10_000_000_000_000);
+pub const GAS_FT_BALANCE_OF: Gas = Gas(20_000_000_000_000);
 pub const GAS_FT_BALANCE_OF_CALLBACK: Gas = Gas(10_000_000_000_000);
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize)]
@@ -108,7 +108,7 @@ impl Contract {
             "ft_transfer",
             json!({
                 "receiver_id": to_account_id,
-                "amount": to_amount.0,
+                "amount": to_amount,
             })
             .to_string()
             .as_bytes(),
@@ -127,7 +127,7 @@ impl Contract {
     /// ```
     pub fn store_ft_balance_of(&mut self, ft_account_id: AccountId) {
         let p1 = env::promise_create(
-            ft_account_id.clone().into(),
+            ft_account_id.clone(),
             "ft_balance_of",
             json!({
                 "account_id": env::current_account_id().to_string(),
@@ -154,11 +154,7 @@ impl Contract {
 
     #[private]
     pub fn store_ft_balance_of_callback(&mut self, ft_account_id: AccountId) {
-        assert_eq!(
-            env::promise_results_count(),
-            1,
-            "Expected 1 promise result."
-        );
+        is_promise_success();
 
         // Return balance or 0
         match env::promise_result(0) {

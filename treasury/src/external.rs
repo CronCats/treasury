@@ -9,8 +9,9 @@ pub struct PoolBalance {
     pub can_withdraw: bool,
 }
 
+// TODO: Remove debug
 /// REF: https://github.com/Narwallets/meta-pool/blob/master/metapool/src/types.rs#L117
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub struct MetaPoolBalance {
     pub account_id: AccountId,
@@ -66,7 +67,7 @@ pub trait Croncat {
         recurring: Option<bool>,
         deposit: Option<U128>,
         gas: Option<u64>,
-        arguments: Option<Vec<u8>>,
+        arguments: Option<Base64VecU8>,
     ) -> Base64VecU8;
     fn remove_task(&mut self, task_hash: Base64VecU8);
     fn proxy_call(&mut self);

@@ -4,6 +4,8 @@
 {
   "viewMethods": [
     "version",
+    "get_config",
+    "get_info",
     "get_delegations",
     "has_delegation_to_withdraw",
     "needs_stake_rebalance",
