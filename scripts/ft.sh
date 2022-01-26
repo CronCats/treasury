@@ -60,4 +60,4 @@ near view $TREASURY_ACCOUNT_ID ft_balances '{"from_index": "0", "limit": "10"}'
 near call $TREASURY_ACCOUNT_ID ft_transfer '{"ft_account_id": "'$CHEDDAR_TOKEN'", "to_account_id": "'$NEAR_ACCT'", "to_amount": "100000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 
-echo "Staking Flows Complete"
+echo "Token Flows Complete"

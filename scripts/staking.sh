@@ -52,22 +52,22 @@ near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --f
 # near view $TREASURY_ACCOUNT_ID get_info
 
 # deposit&stake
-# near call $TREASURY_ACCOUNT_ID deposit_and_stake '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --amount 10
+# near call $TREASURY_ACCOUNT_ID deposit_and_stake '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --amount 13 --gas $MAX_GAS
 # near call $TREASURY_ACCOUNT_ID deposit_and_stake '{"pool_account_id": "hotones.pool.f863973.m0"}' --accountId $TREASURY_ACCOUNT_ID --amount 10 --gas $MAX_GAS
-near call $TREASURY_ACCOUNT_ID deposit_and_stake '{"pool_account_id": "hotones.pool.f863973.m0", "amount": "100000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+# near call $TREASURY_ACCOUNT_ID deposit_and_stake '{"pool_account_id": "hotones.pool.f863973.m0", "amount": "100000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 # # update internal balance
 # near call $TREASURY_ACCOUNT_ID get_staked_balance '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 # near call $TREASURY_ACCOUNT_ID get_staked_balance '{"pool_account_id": "hotones.pool.f863973.m0"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
-near view $TREASURY_ACCOUNT_ID get_delegations
+# near view $TREASURY_ACCOUNT_ID get_delegations
 
 # liquidunstake
-# near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 # near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 # unstake
 # near call $TREASURY_ACCOUNT_ID unstake '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
-near call $TREASURY_ACCOUNT_ID unstake '{"pool_account_id": "hotones.pool.f863973.m0", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+# near call $TREASURY_ACCOUNT_ID unstake '{"pool_account_id": "hotones.pool.f863973.m0", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 # withdraw
 # near call $TREASURY_ACCOUNT_ID withdraw '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS

@@ -711,13 +711,8 @@ impl Contract {
             }
             PromiseResult::Successful(result) => {
                 // Attempt to parse the returned available balance
-                let pool_min_expected_near: U128 = serde_json::de::from_slice(&result)
+                let mut pool_min_expected_near: U128 = serde_json::de::from_slice(&result)
                     .expect("Could not get amount from stake pool");
-                log!(
-                    "pool_min_expected_near {:?} {:?}",
-                    &pool_min_expected_near,
-                    &amount
-                );
 
                 // Double check values before going forward
                 assert!(pool_min_expected_near.0 > 0, "No st_near to unstake");
@@ -725,11 +720,21 @@ impl Contract {
 
                 // If no amount specified, simply unstake all st_near
                 // IF amount, compare to use the maximum unstakable that matches user amounts
+                // TODO: This is always returning with less NEAR than expected because of fees being taken out, need to add fee to amount so ratio can include fee
                 if amount.is_some() {
-                    // limit to maximum staked balance
-                    // TODO: Get amount ratio, then st_near from ratio
-                    if st_near.0 > amount.unwrap().0 {
-                        st_near_to_burn = amount.unwrap()
+                    // Get amount ratio, then desired st_near from ratio
+                    // limit to maximum st_near balance
+                    let denominator = 100;
+                    let desired_amount = u128::from(amount.unwrap().0).saturating_mul(denominator);
+                    let ratio = desired_amount.div_euclid(pool_min_expected_near.0);
+                    let st_unstake_amount =
+                        u128::from(st_near.0.saturating_mul(ratio)).div_euclid(denominator);
+                    if st_near.0 > st_unstake_amount {
+                        st_near_to_burn = U128::from(st_unstake_amount);
+                        pool_min_expected_near = U128::from(
+                            u128::from(pool_min_expected_near.0.saturating_mul(ratio))
+                                .div_euclid(denominator),
+                        );
                     }
                 }
 
