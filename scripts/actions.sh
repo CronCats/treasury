@@ -41,6 +41,8 @@ fi
 export TREASURY_ACCOUNT_ID=treasury.$NEAR_ACCT
 export CRONCAT_MANAGER_ID=manager_v1.croncat.$FACTORY
 
+# near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --force
+
 # add/remove permissions
 # near call $TREASURY_ACCOUNT_ID add_allowed_actions '{"actions": [{ "Transfer": { "token_id": "wrap.near", "receiver_id": "you.near", "amount": "100000000000000000000000000", "msg": "" }}]}' --accountId $TREASURY_ACCOUNT_ID
 # near call $TREASURY_ACCOUNT_ID add_allowed_actions '{"actions": [{ "Budget": { "token_id": "wrap.near", "receiver_id": "you.near", "amount": "100000000000000000000000000", "msg": "" }}]}' --accountId $TREASURY_ACCOUNT_ID

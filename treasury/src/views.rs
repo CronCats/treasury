@@ -54,6 +54,15 @@ impl Contract {
         )
     }
 
+    /// Returns all approved accounts that can receive direct transfers out
+    ///
+    /// ```bash
+    /// near view treasury.testnet get_accounts_payable
+    /// ```
+    pub fn get_accounts_payable(&self) -> Vec<AccountId> {
+        self.approved_accounts_payable.to_vec()
+    }
+
     /// Returns all staking delegations
     ///
     /// ```bash

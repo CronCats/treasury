@@ -45,11 +45,11 @@ export CHEDDAR_TOKEN=token-v3.cheddar.testnet
 
 # near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --force
 
-# near call $TREASURY_ACCOUNT_ID store_ft_balance_of '{"ft_account_id": "'$CHEDDAR_TOKEN'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+near call $TREASURY_ACCOUNT_ID store_ft_balance_of '{"ft_account_id": "'$CHEDDAR_TOKEN'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 # near call $TREASURY_ACCOUNT_ID compute_ft_balances '{"from_index": 0, "limit": 10}'
 
-near view $TREASURY_ACCOUNT_ID get_ft_list
+# near view $TREASURY_ACCOUNT_ID get_ft_list
 
 near view $TREASURY_ACCOUNT_ID ft_balances '{"from_index": "0", "limit": "10"}'
 
@@ -58,7 +58,7 @@ near view $TREASURY_ACCOUNT_ID ft_balances '{"from_index": "0", "limit": "10"}'
 # near view $TREASURY_ACCOUNT_ID ft_balance_of '{"account_id": "'$META_TOKEN'"}' --accountId $TREASURY_ACCOUNT_ID
 # near view $TREASURY_ACCOUNT_ID ft_balance_of '{"account_id": "'$CHEDDAR_TOKEN'"}' --accountId $TREASURY_ACCOUNT_ID
 
-near call $TREASURY_ACCOUNT_ID ft_transfer '{"ft_account_id": "'$CHEDDAR_TOKEN'", "to_account_id": "'$NEAR_ACCT'", "to_amount": "100000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+# near call $TREASURY_ACCOUNT_ID ft_transfer '{"ft_account_id": "'$CHEDDAR_TOKEN'", "to_account_id": "'$NEAR_ACCT'", "to_amount": "100000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 
 echo "Token Flows Complete"

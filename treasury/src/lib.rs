@@ -2,7 +2,7 @@ use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{TreeMap, UnorderedMap, UnorderedSet},
-    env, ext_contract,
+    env, ext_contract, assert_one_yocto,
     json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
@@ -26,6 +26,7 @@ mod owner;
 mod staking;
 mod utils;
 mod views;
+// TODO:
 // mod storage_impl;
 mod ft_impl;
 mod nft_impl;
@@ -50,6 +51,7 @@ pub enum StorageKeys {
     ActionsCadence,
     ActionsTimeout,
     ActionsApproved,
+    AccountsPayableApproved,
     FungibleTokenBalances,
     NonFungibleTokenHoldings,
     StakePools,
@@ -63,6 +65,7 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId, // single or DAO entity
+    approved_accounts_payable: UnorderedSet<AccountId>, // Allowed accounts that can be sent funds, optional so restriction only applies if one or more accounts specified
     // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance, can be DAO or members
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures
 
@@ -101,6 +104,7 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            approved_accounts_payable: UnorderedSet::new(StorageKeys::AccountsPayableApproved),
             approved_action_types: UnorderedSet::new(StorageKeys::ActionsApproved),
             ft_balances: UnorderedMap::new(StorageKeys::FungibleTokenBalances),
             nft_holdings: UnorderedMap::new(StorageKeys::NonFungibleTokenHoldings),
