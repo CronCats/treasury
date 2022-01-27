@@ -33,15 +33,18 @@ export FACTORY=testnet
 export MAX_GAS=300000000000000
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=weicat.$FACTORY
+  # export NEAR_ACCT=weicat.$FACTORY
+  export NEAR_ACCT=vaultfactory.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
 
 export TREASURY_ACCOUNT_ID=treasury.$NEAR_ACCT
 export CRONCAT_MANAGER_ID=manager_v1.croncat.$FACTORY
+export DAO_ID=croncat.sputnikv2.$FACTORY
 
 # owner stuff
-near call $TREASURY_ACCOUNT_ID update_settings '{"croncat_id": "'$CRONCAT_MANAGER_ID'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+# near call $TREASURY_ACCOUNT_ID update_settings '{"croncat_id": "'$CRONCAT_MANAGER_ID'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+near call $TREASURY_ACCOUNT_ID update_settings '{"owner_id": "'$DAO_ID'"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 echo "Bootstrap Complete"

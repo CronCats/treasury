@@ -33,4 +33,6 @@ impl Contract {
             self.stake_threshold = stake_threshold;
         }
     }
+
+    // TODO: Setup a way for approved accounts to get transfers of NEAR, consider config for approved accounts OR all
 }

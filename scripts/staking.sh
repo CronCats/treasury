@@ -33,14 +33,15 @@ export FACTORY=testnet
 export MAX_GAS=300000000000000
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=weicat.$FACTORY
+  # export NEAR_ACCT=weicat.$FACTORY
+  export NEAR_ACCT=vaultfactory.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
 
 export TREASURY_ACCOUNT_ID=treasury.$NEAR_ACCT
 
-near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --force
+# near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --force
 
 # add/remove staking pools
 # near call $TREASURY_ACCOUNT_ID add_staking_pool '{"pool_account_id": "node0"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
@@ -62,7 +63,7 @@ near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --f
 # near view $TREASURY_ACCOUNT_ID get_delegations
 
 # liquidunstake
-near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
+# near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet", "amount": "5000000000000000000000000"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 # near call $TREASURY_ACCOUNT_ID liquid_unstake '{"pool_account_id": "meta-v2.pool.testnet"}' --accountId $TREASURY_ACCOUNT_ID --gas $MAX_GAS
 
 # unstake
