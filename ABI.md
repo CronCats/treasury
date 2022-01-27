@@ -4,6 +4,9 @@
 {
   "viewMethods": [
     "version",
+    "get_config",
+    "get_info",
+    "get_accounts_payable",
     "get_delegations",
     "has_delegation_to_withdraw",
     "needs_stake_rebalance",
@@ -18,6 +21,10 @@
   ],
   "changeMethods": [
     "update_settings",
+    "add_payable_account",
+    "remove_payable_account",
+    "add_allowed_actions",
+    "remove_allowed_action",
     "add_staking_pool",
     "remove_staking_pool",
     "auto_stake",
@@ -27,11 +34,10 @@
     "withdraw",
     "liquid_unstake",
     "yield_harvest",
-    "add_allowed_actions",
-    "remove_allowed_action",
     "create_actions",
     "call_cadence_action",
     "call_timeout_actions",
+    "transfer",
     "ft_transfer",
     "store_ft_balance_of",
     "compute_ft_balances",

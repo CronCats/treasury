@@ -194,7 +194,7 @@ impl Contract {
     /// Returns if an action is allowed or not
     ///
     /// ```bash
-    /// near view treasury.testnet  '{"token_id": "wrap.near", "receiver_id": "you.near", "amount": "1", "msg": ""}' --accountId treasury.testnet
+    /// near view treasury.testnet is_allowed_action '{"token_id": "wrap.near", "receiver_id": "you.near", "amount": "1", "msg": ""}' --accountId treasury.testnet
     /// ```
     pub fn is_allowed_action(&self, action: &ActionType) -> bool {
         self.approved_action_types
@@ -216,6 +216,12 @@ impl Contract {
                         assert!(action.timeout.is_some());
                         let timeout = action.timeout.unwrap_or(U128::from(0));
                         assert_ne!(timeout.0, 0);
+                        log!(
+                            "block {:?}, tssss: {:?}, ts: {:?}",
+                            u128::from(env::block_timestamp()),
+                            timeout,
+                            timeout.0
+                        );
                         assert!(u128::from(env::block_timestamp()) < timeout.0);
 
                         // get the next timestamp, then check where to add to the duration tree

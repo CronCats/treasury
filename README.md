@@ -29,7 +29,14 @@ cargo run --e2e treasury
 **Bootstrapping**
 
 ```bash
-# TBD
+## Setup
+./scripts/clear_all.sh
+./scripts/create_and_deploy.sh
+./scripts/bootstrap.sh
+
+## Test features, by flow:
+./scripts/staking.sh
+./scripts/actions.sh
 ```
 
 ### Notes:

@@ -3,16 +3,20 @@ use crate::*;
 use near_sdk::BlockHeight;
 
 /// Amount of blocks needed before withdraw is available
-pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(10_000_000_000_000);
-pub const GAS_STAKE_UNSTAKE: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_DEPOSIT_AND_STAKE: Gas = Gas(70_000_000_000_000);
+pub const GAS_STAKE_UNSTAKE: Gas = Gas(40_000_000_000_000);
 pub const GAS_STAKE_WITHDRAW_ALL: Gas = Gas(40_000_000_000_000);
 pub const GAS_STAKE_GET_STAKE_BALANCE: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_GET_STAKE_BALANCE_CALLBACK: Gas = Gas(10_000_000_000_000);
 pub const GAS_STAKE_LIQUID_UNSTAKE_VIEW: Gas = Gas(10_000_000_000_000);
-pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = Gas(10_000_000_000_000);
-pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = Gas(10_000_000_000_000);
-pub const GAS_YIELD_HARVEST: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_FEE_VIEW: Gas = Gas(10_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK: Gas = Gas(80_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_CALLBACK_FINAL: Gas = Gas(40_000_000_000_000);
+pub const GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL: Gas = Gas(30_000_000_000_000);
+pub const GAS_YIELD_HARVEST: Gas = Gas(120_000_000_000_000);
 pub const GAS_CRONCAT_CREATE_TASK: Gas = Gas(30_000_000_000_000);
+
+pub const CRONCAT_CREATE_TASK_FEE: Balance = 17500000000000000000000;
 
 /// Stake Buckets keep track of staked amounts per-pool
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
@@ -37,7 +41,22 @@ pub struct StakeDelegation {
 }
 
 /// Stake Buckets keep track of staked amounts per-pool
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PanicOnDefault)]
+#[serde(crate = "near_sdk::serde")]
+pub struct StakeDelegationHumanFriendly {
+    pub pool_account_id: AccountId,
+    pub init_balance: U128,
+    pub balance: U128,
+    pub start_block: BlockHeight,
+    pub withdraw_epoch: Option<u64>,
+    pub withdraw_balance: Option<U128>,
+    pub withdraw_function: String,
+    pub liquid_unstake_function: Option<String>,
+    pub yield_function: Option<String>,
+}
+
+/// Stake Buckets keep track of staked amounts per-pool
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct StakeThreshold {
     // TODO: Bool for turning on/off auto-staking
@@ -259,7 +278,7 @@ impl Contract {
             // Time to restake some amount
             self.deposit_and_stake(
                 pool_id.clone(),
-                Some(liquid_ideal.saturating_sub(liquid_actual)),
+                Some(U128::from(liquid_ideal.saturating_sub(liquid_actual))),
             );
         }
 
@@ -267,7 +286,9 @@ impl Contract {
         if liquid_actual < liquid_ideal.saturating_sub(liquid_deviation) {
             // Time to unstake some amount
             if liquid_actual < liquid_ideal.saturating_sub(liquid_extreme_deviation) {
-                let unstake_amount = Some(liquid_extreme_deviation.saturating_sub(liquid_actual));
+                let unstake_amount = Some(U128::from(
+                    liquid_extreme_deviation.saturating_sub(liquid_actual),
+                ));
                 let pool = self
                     .stake_delegations
                     .get(&pool_id.clone())
@@ -281,7 +302,9 @@ impl Contract {
             } else {
                 self.unstake(
                     pool_id,
-                    Some(liquid_extreme_deviation.saturating_sub(liquid_actual)),
+                    Some(U128::from(
+                        liquid_extreme_deviation.saturating_sub(liquid_actual),
+                    )),
                 );
             }
         }
@@ -303,7 +326,7 @@ impl Contract {
     /// near call treasury.testnet deposit_and_stake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
     #[payable]
-    pub fn deposit_and_stake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+    pub fn deposit_and_stake(&mut self, pool_account_id: AccountId, amount: Option<U128>) {
         self.assert_owner();
         let mut stake_amount: Balance = 0;
         let pool_delegation = self.stake_delegations.get(&pool_account_id);
@@ -313,17 +336,19 @@ impl Contract {
             stake_amount = env::attached_deposit();
         } else {
             assert!(
-                u128::from(env::account_balance()).saturating_sub(amount.unwrap_or(0))
+                u128::from(env::account_balance())
+                    .saturating_sub(amount.unwrap_or(U128::from(0)).0)
                     > MIN_BALANCE_FOR_STORAGE,
                 "Account Balance Under Minimum Balance"
             );
             if let Some(amount) = amount {
-                stake_amount = amount;
+                stake_amount = amount.0;
             }
         }
 
         // Stop if somehow we made it this far and have nothing to stake... RUDE
         assert_ne!(stake_amount, 0, "Nothing to stake");
+        log!("Amount to stake {:?}", &stake_amount);
 
         let delegation = pool_delegation.unwrap();
         let updated_delegation = StakeDelegation {
@@ -357,7 +382,7 @@ impl Contract {
     /// NOTE: This is a CALL because it updates internal balances
     ///
     /// ```bash
-    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
+    /// near call treasury.testnet get_staked_balance '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
     pub fn get_staked_balance(&mut self, pool_account_id: AccountId) {
         assert!(
@@ -459,7 +484,7 @@ impl Contract {
     ///
     /// near call treasury.testnet unstake '{"pool_account_id": "steak.factory.testnet"}' --accountId treasury.testnet
     /// ```
-    pub fn unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+    pub fn unstake(&mut self, pool_account_id: AccountId, amount: Option<U128>) {
         self.assert_owner();
         let pool_delegation = self.stake_delegations.get(&pool_account_id);
         assert!(pool_delegation.is_some(), "Stake delegation doesnt exist");
@@ -467,13 +492,13 @@ impl Contract {
 
         // Stop if somehow we made it this far and have nothing to unstake... RUDE
         if amount.is_some() {
-            assert_ne!(amount.unwrap(), 0, "Nothing to unstake");
+            assert_ne!(amount.unwrap().0, 0, "Nothing to unstake");
             unstake_function = "unstake";
         }
 
         // Update our local balance values, so we know whats in process of long-form unstaking
         let mut delegation = pool_delegation.unwrap();
-        let withdraw_balance = amount.unwrap_or(0);
+        let withdraw_balance = amount.unwrap_or(U128::from(0)).0;
         delegation.withdraw_epoch = Some(env::epoch_height() + 4);
         delegation.withdraw_balance = Some(withdraw_balance);
         self.stake_pending_delegations
@@ -481,7 +506,7 @@ impl Contract {
 
         // Lastly, make the cross-contract call to DO the unstaking :D
         let p = env::promise_create(
-            pool_account_id,
+            pool_account_id.clone(),
             &unstake_function,
             json!({
                 "amount": amount,
@@ -497,15 +522,22 @@ impl Contract {
         if self.croncat_id.is_some() {
             external::croncat::create_task(
                 env::current_account_id().to_string(),
-                "withdraw_all".to_string(),
-                // TODO: what cadence is needed here? (this sets it to every sunday at minute 0), ideally can set a block height start
-                "0 0 * * 0 *".to_string(),
+                "withdraw".to_string(),
+                // TODO: what cadence is needed here? (this sets it to every friday at minute 0), ideally can set a block height start
+                "* * * * * Fri".to_string(),
                 Some(false),
                 Some(U128::from(NO_DEPOSIT)),
-                Some(GAS_STAKE_WITHDRAW_ALL + GAS_CRONCAT_CREATE_TASK), // 70 Tgas
-                None,
+                Some(u64::from(GAS_STAKE_WITHDRAW_ALL + GAS_CRONCAT_CREATE_TASK)), // 70 Tgas
+                Some(Base64VecU8::from(
+                    json!({
+                        "pool_account_id": pool_account_id,
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                )),
                 self.croncat_id.clone().unwrap(),
-                env::attached_deposit(),
+                CRONCAT_CREATE_TASK_FEE,
                 GAS_CRONCAT_CREATE_TASK,
             );
         }
@@ -535,6 +567,7 @@ impl Contract {
         pool_delegation.balance = pool_delegation
             .balance
             .saturating_sub(pending_pool_delegation.withdraw_balance.unwrap_or(0));
+        log!("pool_delegation.balance {:?}", pool_delegation.balance);
         self.stake_pending_delegations.remove(&pool_account_id);
         self.stake_delegations
             .insert(&pool_account_id, &pool_delegation);
@@ -552,11 +585,16 @@ impl Contract {
     }
 
     /// Unstake any liquid staked near tokens for NEAR. Useful for situations that require immediate access to NEAR.
+    /// NOTE: This is a 3 part process:
+    ///       1. Get the staking balance
+    ///       2. Get the amount available to withdraw
+    ///       3. Make the actual liquid_unstaking
+    /// NOTE: The amount is the liquid staked asset, not NEAR
     ///
     /// ```bash
     /// near call treasury.testnet liquid_unstake '{"pool_account_id": "steak.factory.testnet", "amount": "100000000000000000000000000"}' --accountId treasury.testnet
     /// ```
-    pub fn liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+    pub fn liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<U128>) {
         self.assert_owner();
         let delegated_stake = self.stake_delegations.get(&pool_account_id);
         assert!(delegated_stake.is_some(), "Delegation doesnt exist");
@@ -596,9 +634,9 @@ impl Contract {
         env::promise_return(p2);
     }
 
-    /// CALLBACK for get_staked_balance
+    /// 2. CALLBACK for get_account_info - which returns the amount of near staked
     #[private]
-    pub fn callback_liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<Balance>) {
+    pub fn callback_liquid_unstake(&mut self, pool_account_id: AccountId, amount: Option<U128>) {
         is_promise_success();
 
         // Return balance or 0
@@ -610,6 +648,7 @@ impl Contract {
                 // Attempt to parse the returned account balances
                 let pool_balance: external::MetaPoolBalance = serde_json::de::from_slice(&result)
                     .expect("Could not get balance from stake pool");
+                log!("pool_balance {:?}", pool_balance);
 
                 // Double check values before going forward
                 assert!(pool_balance.st_near.0 > 0, "No st_near balance");
@@ -617,23 +656,89 @@ impl Contract {
                     pool_balance.valued_st_near.0 > 0,
                     "No valued_st_near balance"
                 );
-                let mut st_near_to_burn = pool_balance.st_near;
-                let mut min_expected_near = pool_balance.valued_st_near;
+                let st_near: U128 = pool_balance.st_near;
 
-                // If no amount specified, simply unstake all
+                // First check if there are any staked balances
+                let p1 = env::promise_create(
+                    pool_account_id.clone(),
+                    "get_near_amount_sell_stnear",
+                    json!({
+                        "stnear_to_sell": st_near,
+                    })
+                    .to_string()
+                    .as_bytes(),
+                    NO_DEPOSIT,
+                    GAS_STAKE_LIQUID_UNSTAKE_FEE_VIEW,
+                );
+
+                let p2 = env::promise_then(
+                    p1,
+                    env::current_account_id(),
+                    "callback_liquid_unstake_final",
+                    json!({
+                        "pool_account_id": pool_account_id,
+                        "amount": amount,
+                        "st_near": st_near,
+                    })
+                    .to_string()
+                    .as_bytes(),
+                    NO_DEPOSIT,
+                    GAS_STAKE_LIQUID_UNSTAKE_CALLBACK_FINAL,
+                );
+
+                env::promise_return(p2);
+            }
+            PromiseResult::Failed => {
+                // Fail me not, please
+            }
+        }
+    }
+
+    /// 3. CALLBACK for get_near_amount_sell_stnear - which returns the amount of near that can be unstaked
+    #[private]
+    pub fn callback_liquid_unstake_final(
+        &mut self,
+        pool_account_id: AccountId,
+        amount: Option<U128>,
+        st_near: U128,
+    ) {
+        is_promise_success();
+
+        // Return balance or 0
+        match env::promise_result(0) {
+            PromiseResult::NotReady => {
+                unreachable!()
+            }
+            PromiseResult::Successful(result) => {
+                // Attempt to parse the returned available balance
+                let mut pool_min_expected_near: U128 = serde_json::de::from_slice(&result)
+                    .expect("Could not get amount from stake pool");
+
+                // Double check values before going forward
+                assert!(pool_min_expected_near.0 > 0, "No st_near to unstake");
+                let mut st_near_to_burn = st_near;
+
+                // If no amount specified, simply unstake all st_near
+                // IF amount, compare to use the maximum unstakable that matches user amounts
+                // TODO: This is always returning with less NEAR than expected because of fees being taken out, need to add fee to amount so ratio can include fee
                 if amount.is_some() {
-                    // Get st_near / near price, and compute st_near amount
-                    // TODO: Check this division isnt naive
-                    let st_near_price = pool_balance
-                        .st_near
-                        .0
-                        .div_euclid(pool_balance.valued_st_near.0);
-                    st_near_to_burn = U128::from(amount.unwrap().div_euclid(st_near_price));
-                    min_expected_near = U128::from(amount.unwrap());
+                    // Get amount ratio, then desired st_near from ratio
+                    // limit to maximum st_near balance
+                    let denominator = 100;
+                    let desired_amount = u128::from(amount.unwrap().0).saturating_mul(denominator);
+                    let ratio = desired_amount.div_euclid(pool_min_expected_near.0);
+                    let st_unstake_amount =
+                        u128::from(st_near.0.saturating_mul(ratio)).div_euclid(denominator);
+                    if st_near.0 > st_unstake_amount {
+                        st_near_to_burn = U128::from(st_unstake_amount);
+                        pool_min_expected_near = U128::from(
+                            u128::from(pool_min_expected_near.0.saturating_mul(ratio))
+                                .div_euclid(denominator),
+                        );
+                    }
                 }
 
                 // We have some balances, attempt to unstake
-                // TODO: No fee was calculated, does that cause issues on min_expected_near?
                 let delegation = self
                     .stake_delegations
                     .get(&pool_account_id)
@@ -643,11 +748,11 @@ impl Contract {
                     &delegation.liquid_unstake_function.unwrap(),
                     json!({
                         "st_near_to_burn": st_near_to_burn,
-                        "min_expected_near": min_expected_near,
+                        "min_expected_near": pool_min_expected_near,
                     })
                     .to_string()
                     .as_bytes(),
-                    ONE_YOCTO,
+                    NO_DEPOSIT,
                     GAS_STAKE_LIQUID_UNSTAKE_POOL_CALL,
                 );
 
