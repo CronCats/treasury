@@ -1,8 +1,9 @@
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 use near_sdk::{
+    assert_one_yocto,
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{TreeMap, UnorderedMap, UnorderedSet},
-    env, ext_contract, assert_one_yocto,
+    env, ext_contract,
     json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
@@ -64,7 +65,7 @@ pub enum StorageKeys {
 pub struct Contract {
     // Runtime
     paused: bool,
-    owner_id: AccountId, // single or DAO entity
+    owner_id: AccountId,                                // single or DAO entity
     approved_accounts_payable: UnorderedSet<AccountId>, // Allowed accounts that can be sent funds, optional so restriction only applies if one or more accounts specified
     // approved_signees: Option<UnorderedSet<AccountId>>, // Allows potential multisig instance, can be DAO or members
     // signer_threshold: Option<[u32; 2]>, // allows definitions of threshold for signatures, example: 3/5 signatures

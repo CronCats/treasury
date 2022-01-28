@@ -144,7 +144,7 @@ impl Contract {
     /// ```bash
     /// near view treasury.testnet has_delegation_to_withdraw
     /// ```
-    pub fn has_delegation_to_withdraw(&self) -> (bool, Vec<AccountId>) {
+    pub fn has_delegation_to_withdraw(&self) -> external::CroncatTriggerResponse {
         let mut ret: Vec<AccountId> = Vec::new();
         let mut has_withdraw = false;
 
@@ -153,8 +153,8 @@ impl Contract {
         for pool_account_id in keys.iter() {
             if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
                 // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
-                if delegation.withdraw_epoch.expect("No withdraw epoch") < env::epoch_height()
-                    && delegation.withdraw_balance.expect("No withdraw balance") > 0
+                if delegation.withdraw_epoch.unwrap_or(env::epoch_height()) < env::epoch_height()
+                    && delegation.withdraw_balance.unwrap_or(0) > 0
                 {
                     has_withdraw = true;
                 }
@@ -162,7 +162,10 @@ impl Contract {
                 ret.push(pool_account_id);
             }
         }
-        (has_withdraw, ret)
+        (
+            has_withdraw,
+            Base64VecU8::from(serde_json::ser::to_vec(&ret).expect("Could not serialize")),
+        )
     }
 
     /// Check staking threshold to find if an auto_stake rebalance should occur
@@ -170,7 +173,7 @@ impl Contract {
     /// ```bash
     /// near view treasury.testnet needs_stake_rebalance --accountId manager_v1.croncat.testnet
     /// ```
-    pub fn needs_stake_rebalance(&self) -> (bool, u128, u128, u128, u128) {
+    pub fn needs_stake_rebalance(&self) -> external::CroncatTriggerResponse {
         let threshold = &self.stake_threshold;
         let current_balance = env::account_balance();
         let mut staked_balance: Balance = 0;
@@ -207,10 +210,15 @@ impl Contract {
         if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
             return (
                 true,
-                liquid_actual,
-                liquid_ideal,
-                liquid_deviation,
-                liquid_extreme_deviation,
+                Base64VecU8::from(
+                    serde_json::ser::to_vec(&vec![
+                        U128::from(liquid_actual),
+                        U128::from(liquid_ideal),
+                        U128::from(liquid_deviation),
+                        U128::from(liquid_extreme_deviation),
+                    ])
+                    .expect("Could not serialize"),
+                ),
             );
         }
 
@@ -220,19 +228,21 @@ impl Contract {
         {
             return (
                 true,
-                liquid_actual,
-                liquid_ideal,
-                liquid_deviation,
-                liquid_extreme_deviation,
+                Base64VecU8::from(
+                    serde_json::ser::to_vec(&vec![
+                        U128::from(liquid_actual),
+                        U128::from(liquid_ideal),
+                        U128::from(liquid_deviation),
+                        U128::from(liquid_extreme_deviation),
+                    ])
+                    .expect("Could not serialize"),
+                ),
             );
         }
 
         return (
             false,
-            liquid_actual,
-            liquid_ideal,
-            liquid_deviation,
-            liquid_extreme_deviation,
+            Base64VecU8::from(serde_json::ser::to_vec(&vec![U128::from(liquid_actual), U128::from(liquid_ideal), U128::from(liquid_deviation), U128::from(liquid_extreme_deviation)]).expect("Could not serialize"))
         );
     }
 
@@ -254,16 +264,18 @@ impl Contract {
                 || env::predecessor_account_id() == self.croncat_id.clone().unwrap(),
             "Not an approved caller"
         );
-        let (
-            needs_rebalance,
-            liquid_actual,
-            liquid_ideal,
-            liquid_deviation,
-            liquid_extreme_deviation,
-        ) = self.needs_stake_rebalance();
+        let (needs_rebalance, liquid_base64): external::CroncatTriggerResponse =
+            self.needs_stake_rebalance();
         if !needs_rebalance {
             return;
         }
+        let (liquid_actual, liquid_ideal, liquid_deviation, liquid_extreme_deviation): (
+            U128,
+            U128,
+            U128,
+            U128,
+        ) = serde_json::de::from_slice(&liquid_base64.try_to_vec().expect("Base64 to Vec fail"))
+            .expect("Could not deserialize");
 
         // Get the staking pool(s) to do things
         // NOTE: For simplicity, just going to get 1 pool
@@ -274,20 +286,20 @@ impl Contract {
             .expect("No pool id found");
 
         // Check if liquid balance is above threshold deviation
-        if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
+        if liquid_actual.0 > liquid_ideal.0.saturating_add(liquid_deviation.0) {
             // Time to restake some amount
             self.deposit_and_stake(
                 pool_id.clone(),
-                Some(U128::from(liquid_ideal.saturating_sub(liquid_actual))),
+                Some(U128::from(liquid_ideal.0.saturating_sub(liquid_actual.0))),
             );
         }
 
         // Check if liquid balance is below threshold deviation
-        if liquid_actual < liquid_ideal.saturating_sub(liquid_deviation) {
+        if liquid_actual.0 < liquid_ideal.0.saturating_sub(liquid_deviation.0) {
             // Time to unstake some amount
-            if liquid_actual < liquid_ideal.saturating_sub(liquid_extreme_deviation) {
+            if liquid_actual.0 < liquid_ideal.0.saturating_sub(liquid_extreme_deviation.0) {
                 let unstake_amount = Some(U128::from(
-                    liquid_extreme_deviation.saturating_sub(liquid_actual),
+                    liquid_extreme_deviation.0.saturating_sub(liquid_actual.0),
                 ));
                 let pool = self
                     .stake_delegations
@@ -303,7 +315,7 @@ impl Contract {
                 self.unstake(
                     pool_id,
                     Some(U128::from(
-                        liquid_extreme_deviation.saturating_sub(liquid_actual),
+                        liquid_extreme_deviation.0.saturating_sub(liquid_actual.0),
                     )),
                 );
             }

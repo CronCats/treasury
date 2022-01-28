@@ -77,10 +77,13 @@ impl Contract {
     /// ```
     pub fn transfer(&mut self, receiver_id: AccountId, amount: U128) -> Promise {
         self.assert_owner();
-        
+
         // Check approved accounts if any are specified, otherwise allow any
         if self.approved_accounts_payable.len() > 0 {
-            assert!(self.approved_accounts_payable.contains(&receiver_id), "Account restricted, needs approval");
+            assert!(
+                self.approved_accounts_payable.contains(&receiver_id),
+                "Account restricted, needs approval"
+            );
         }
 
         Promise::new(receiver_id).transfer(amount.0)

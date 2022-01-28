@@ -92,3 +92,5 @@ pub trait Croncat {
         U128,
     );
 }
+
+pub type CroncatTriggerResponse = (bool, Base64VecU8);

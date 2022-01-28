@@ -40,7 +40,7 @@ fi
 export TREASURY_ACCOUNT_ID=treasury.$NEAR_ACCT
 
 # create all accounts
-near create-account $TREASURY_ACCOUNT_ID --masterAccount $NEAR_ACCT
+near create-account $TREASURY_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 80
 
 # Deploy all the contracts to their rightful places
 near deploy --wasmFile ../res/treasury.wasm --accountId $TREASURY_ACCOUNT_ID --initFunction new --initArgs '{}'
