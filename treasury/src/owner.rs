@@ -79,7 +79,7 @@ impl Contract {
         self.assert_owner();
 
         // Check approved accounts if any are specified, otherwise allow any
-        if self.approved_accounts_payable.len() > 0 {
+        if !self.approved_accounts_payable.is_empty() {
             assert!(
                 self.approved_accounts_payable.contains(&receiver_id),
                 "Account restricted, needs approval"
