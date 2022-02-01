@@ -198,7 +198,7 @@ impl Contract {
     /// ```
     pub fn is_allowed_action(&self, action: &ActionType) -> bool {
         self.approved_action_types
-            .contains(&self.get_action_label(&action))
+            .contains(&self.get_action_label(action))
     }
 
     /// Accept a list of actions, parse for when and how they should get stored
@@ -214,7 +214,7 @@ impl Contract {
                 match action.get_time_type() {
                     ActionTime::Timeout => {
                         assert!(action.timeout.is_some());
-                        let timeout = action.timeout.unwrap_or(U128::from(0));
+                        let timeout = action.timeout.unwrap_or_else(|| U128::from(0));
                         assert_ne!(timeout.0, 0);
                         log!(
                             "block {:?}, tssss: {:?}, ts: {:?}",
@@ -228,7 +228,7 @@ impl Contract {
                         let mut ts_actions = self
                             .timeout_actions
                             .get(&timeout.0)
-                            .unwrap_or(VecDeque::new());
+                            .unwrap_or_else(VecDeque::new);
 
                         // place with priority, then write to storage
                         if action.priority > 0 {
@@ -270,20 +270,20 @@ impl Contract {
     /// ```bash
     /// near view treasury.testnet has_timeout_actions
     /// ```
-    pub fn has_timeout_actions(&self) -> (bool, Vec<U128>) {
-        if self.timeout_actions.len() == 0 {
-            return (false, Vec::new());
+    pub fn has_timeout_actions(&self) -> Option<Vec<U128>> {
+        if self.timeout_actions.is_empty() {
+            None
+        } else {
+            let block_ts = u128::from(env::block_timestamp());
+            let mut timeouts: Vec<U128> = self
+                .timeout_actions
+                .to_vec()
+                .iter()
+                .map(|(k, _)| U128::from(*k))
+                .collect();
+            timeouts.retain(|t| t.0 < block_ts);
+            self.timeout_actions.floor_key(&block_ts).map(|_| timeouts)
         }
-        let block_ts = u128::from(env::block_timestamp());
-        let key = self.timeout_actions.floor_key(&block_ts);
-        let mut timeouts: Vec<U128> = self
-            .timeout_actions
-            .to_vec()
-            .iter()
-            .map(|(k, _)| U128::from(*k))
-            .collect();
-        timeouts.retain(|t| t.0 < block_ts);
-        (key.is_some(), timeouts)
     }
 
     // TODO: Validate if this can be "trusted" to be called as expected, otherwise deprecate.
@@ -298,7 +298,7 @@ impl Contract {
             .cadence_actions
             .get(&cadence)
             .expect("No actions to execute");
-        self.call_action(action.clone());
+        self.call_action(action);
     }
 
     /// Called by croncat trigger
@@ -307,32 +307,30 @@ impl Contract {
     /// near call treasury.testnet call_timeout_actions --accountId manager_v1.croncat.testnet
     /// ```
     pub fn call_timeout_actions(&mut self) {
-        let (has, keys) = self.has_timeout_actions();
-        assert_eq!(has, true, "No actions to execute");
-        let mut actions_total = 0;
-        let max_chunks = 10;
+        if let Some(keys) = self.has_timeout_actions() {
+            let max_chunks = 10;
 
-        // Attempt to process a total of 10 actions, packing from one or more queues
-        for key in keys.iter() {
-            if actions_total > max_chunks {
-                break;
-            }
+            // Attempt to process a total of 10 actions, packing from one or more queues
+            keys.iter()
+                .enumerate()
+                .take(max_chunks)
+                .for_each(|(actions_total, key)| {
+                    // Get a subset of the queue based on the key
+                    if let Some(tmp_queue) = self.timeout_actions.get(&key.0) {
+                        let mut subset = tmp_queue;
+                        let queue = subset.split_off(max_chunks - actions_total);
 
-            // Get a subset of the queue based on the key
-            if let Some(tmp_queue) = self.timeout_actions.get(&key.0) {
-                let mut subset = tmp_queue;
-                let queue = subset.split_off(max_chunks - actions_total);
+                        // update storage removing the subset we will process
+                        self.timeout_actions.insert(&key.0, &queue);
 
-                // update storage removing the subset we will process
-                self.timeout_actions.insert(&key.0, &queue);
-
-                // iterate the subset to process all actions
-                for action in subset.iter() {
-                    self.call_action(action.clone());
-                }
-            }
-
-            actions_total += 1;
+                        // iterate the subset to process all actions
+                        for action in subset.iter() {
+                            self.call_action(action.clone());
+                        }
+                    }
+                });
+        } else {
+            panic!("No actions to execute");
         }
     }
 
@@ -408,12 +406,14 @@ impl Contract {
     ) {
         // Compute the amount: whole number or percent into whole number
         // NOTE: does not support percentile including staked balance, you should unstake if needed first before doing percentile payments
-        let final_amount = amount.unwrap_or(U128::from(
-            (U256::from(amount_percentile.unwrap_or(U128::from(0)).0)
-                * U256::from(env::account_balance())
-                / U256::from(100))
-            .as_u128(),
-        ));
+        let final_amount = amount.unwrap_or_else(|| {
+            U128::from(
+                (U256::from(amount_percentile.map(|x| x.0).unwrap_or(0))
+                    * U256::from(env::account_balance())
+                    / U256::from(100))
+                .as_u128(),
+            )
+        });
 
         // make the transfer
         self.action_transfer(&token_id, &receiver_id, final_amount, msg);

@@ -116,7 +116,7 @@ impl Contract {
                 start_block: 0, // 0 indicates that the staking has not started yet
                 withdraw_epoch: None,
                 withdraw_balance: None,
-                withdraw_function: withdraw_function.unwrap_or("withdraw_all".to_string()),
+                withdraw_function: withdraw_function.unwrap_or_else(|| "withdraw_all".to_string()),
                 liquid_unstake_function,
                 yield_function,
             },
@@ -145,23 +145,25 @@ impl Contract {
     /// near view treasury.testnet has_delegation_to_withdraw
     /// ```
     pub fn has_delegation_to_withdraw(&self) -> external::CroncatTriggerResponse {
-        let mut ret: Vec<AccountId> = Vec::new();
-        let mut has_withdraw = false;
+        let (ret, delegations): (Vec<AccountId>, Vec<StakeDelegation>) = self
+            .stake_pending_delegations
+            .keys_as_vector()
+            .iter()
+            .filter_map(|pool_account_id| {
+                self.stake_pending_delegations
+                    .get(&pool_account_id)
+                    .map(|delegation| (pool_account_id, delegation))
+            })
+            .unzip();
 
-        // Return all data within range
-        let keys = self.stake_pending_delegations.keys_as_vector();
-        for pool_account_id in keys.iter() {
-            if let Some(delegation) = self.stake_pending_delegations.get(&pool_account_id) {
-                // Check if any of the pending delegations have a withdraw epoch older than THIS epoch
-                if delegation.withdraw_epoch.unwrap_or(env::epoch_height()) < env::epoch_height()
-                    && delegation.withdraw_balance.unwrap_or(0) > 0
-                {
-                    has_withdraw = true;
-                }
+        let has_withdraw = delegations.iter().any(|delegation| {
+            delegation
+                .withdraw_epoch
+                .map(|x| x < env::epoch_height())
+                .unwrap_or(false)
+                && delegation.withdraw_balance.map(|x| x > 0).unwrap_or(false)
+        });
 
-                ret.push(pool_account_id);
-            }
-        }
         (
             has_withdraw,
             Base64VecU8::from(serde_json::ser::to_vec(&ret).expect("Could not serialize")),
@@ -241,10 +243,18 @@ impl Contract {
             );
         }
 
-        return (
+        (
             false,
-            Base64VecU8::from(serde_json::ser::to_vec(&vec![U128::from(liquid_actual), U128::from(liquid_ideal), U128::from(liquid_deviation), U128::from(liquid_extreme_deviation)]).expect("Could not serialize"))
-        );
+            Base64VecU8::from(
+                serde_json::ser::to_vec(&vec![
+                    U128::from(liquid_actual),
+                    U128::from(liquid_ideal),
+                    U128::from(liquid_deviation),
+                    U128::from(liquid_extreme_deviation),
+                ])
+                .expect("Could not serialize"),
+            ),
+        )
     }
 
     /// Check staking threshold for eval
@@ -304,7 +314,7 @@ impl Contract {
                 ));
                 let pool = self
                     .stake_delegations
-                    .get(&pool_id.clone())
+                    .get(&pool_id)
                     .expect("No delegation found for pool");
                 // If pool supports liquid unstaking, otherwise go to regular
                 if pool.liquid_unstake_function.is_some() {
@@ -349,8 +359,7 @@ impl Contract {
             stake_amount = env::attached_deposit();
         } else {
             assert!(
-                u128::from(env::account_balance())
-                    .saturating_sub(amount.unwrap_or(U128::from(0)).0)
+                env::account_balance().saturating_sub(amount.map(|x| x.0).unwrap_or(0))
                     > MIN_BALANCE_FOR_STORAGE,
                 "Account Balance Under Minimum Balance"
             );
@@ -511,7 +520,7 @@ impl Contract {
 
         // Update our local balance values, so we know whats in process of long-form unstaking
         let mut delegation = pool_delegation.unwrap();
-        let withdraw_balance = amount.unwrap_or(U128::from(0)).0;
+        let withdraw_balance = amount.map(|x| x.0).unwrap_or(0);
         delegation.withdraw_epoch = Some(env::epoch_height() + 4);
         delegation.withdraw_balance = Some(withdraw_balance);
         self.stake_pending_delegations
@@ -520,7 +529,7 @@ impl Contract {
         // Lastly, make the cross-contract call to DO the unstaking :D
         let p = env::promise_create(
             pool_account_id.clone(),
-            &unstake_function,
+            unstake_function,
             json!({
                 "amount": amount,
             })
@@ -734,18 +743,19 @@ impl Contract {
                 // If no amount specified, simply unstake all st_near
                 // IF amount, compare to use the maximum unstakable that matches user amounts
                 // TODO: This is always returning with less NEAR than expected because of fees being taken out, need to add fee to amount so ratio can include fee
-                if amount.is_some() {
+                if let Some(amount) = amount {
                     // Get amount ratio, then desired st_near from ratio
                     // limit to maximum st_near balance
                     let denominator = 100;
-                    let desired_amount = u128::from(amount.unwrap().0).saturating_mul(denominator);
+                    let desired_amount = amount.0.saturating_mul(denominator);
                     let ratio = desired_amount.div_euclid(pool_min_expected_near.0);
-                    let st_unstake_amount =
-                        u128::from(st_near.0.saturating_mul(ratio)).div_euclid(denominator);
+                    let st_unstake_amount = st_near.0.saturating_mul(ratio).div_euclid(denominator);
                     if st_near.0 > st_unstake_amount {
                         st_near_to_burn = U128::from(st_unstake_amount);
                         pool_min_expected_near = U128::from(
-                            u128::from(pool_min_expected_near.0.saturating_mul(ratio))
+                            pool_min_expected_near
+                                .0
+                                .saturating_mul(ratio)
                                 .div_euclid(denominator),
                         );
                     }
@@ -757,7 +767,7 @@ impl Contract {
                     .get(&pool_account_id)
                     .expect("Delegation doesnt exist");
                 let p1 = env::promise_create(
-                    pool_account_id.clone(),
+                    pool_account_id,
                     &delegation.liquid_unstake_function.unwrap(),
                     json!({
                         "st_near_to_burn": st_near_to_burn,

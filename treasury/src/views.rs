@@ -31,7 +31,7 @@ impl Contract {
             self.owner_id.to_string(),
             self.croncat_id
                 .clone()
-                .unwrap_or(AccountId::from_str("no_croncat_account").unwrap())
+                .unwrap_or_else(|| AccountId::from_str("no_croncat_account").unwrap())
                 .to_string(),
             self.stake_threshold.clone(),
         )
