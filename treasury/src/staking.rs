@@ -206,6 +206,7 @@ impl Contract {
             total_balance,
         );
 
+        // TODO: Needs to check both sides of the threshold (above & below ideal)
         // Check if liquid balance is above threshold deviation
         if liquid_actual > liquid_ideal.saturating_add(liquid_deviation) {
             return (
